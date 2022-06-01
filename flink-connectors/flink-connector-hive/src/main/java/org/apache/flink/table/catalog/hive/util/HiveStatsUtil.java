@@ -141,6 +141,7 @@ public class HiveStatsUtil {
         Map<String, CatalogColumnStatisticsDataBase> colStats = new HashMap<>();
         // partition -> row count in partition
         Map<String, Long> cachePartitionRowCount = new HashMap<>();
+        LOG.info("PARTITION TABLE STATISTICS FOR COLUMNS-----------------------------------------");
         colPartitionStats.forEach(
                 (colName, colPartitionStatisticList) ->
                         colStats.put(
@@ -150,7 +151,8 @@ public class HiveStatsUtil {
                                         columnPartitions.get(colName),
                                         hiveCatalog,
                                         cachePartitionRowCount,
-                                        tablePath)));
+                                        tablePath,
+                                        colName)));
         return colStats;
     }
 
@@ -208,31 +210,56 @@ public class HiveStatsUtil {
             List<String> partitions,
             HiveCatalog hiveCatalog,
             Map<String, Long> cachePartitionRowCount,
-            ObjectPath tablePath) {
+            ObjectPath tablePath,
+            String colName) {
         Preconditions.checkArgument(columnStatisticsDataList.size() > 0);
         CatalogColumnStatisticsDataBase colStat = columnStatisticsDataList.get(0);
         if (colStat instanceof CatalogColumnStatisticsDataBinary) {
-            return mergeCatalogColumnStatisticsDataBinary(
-                    columnStatisticsDataList,
-                    partitions,
-                    hiveCatalog,
-                    cachePartitionRowCount,
-                    tablePath);
+            CatalogColumnStatisticsDataBase cdb =
+                    mergeCatalogColumnStatisticsDataBinary(
+                            columnStatisticsDataList,
+                            partitions,
+                            hiveCatalog,
+                            cachePartitionRowCount,
+                            tablePath);
+            CatalogColumnStatisticsDataBinary cdb1 = (CatalogColumnStatisticsDataBinary) cdb;
+            LOG.info("merged statistics : colName: {}  statistics: {}", colName, cdb1);
+            return cdb;
         } else if (colStat instanceof CatalogColumnStatisticsDataBoolean) {
-            return mergeCatalogColumnStatisticsDataBoolean(columnStatisticsDataList);
+            CatalogColumnStatisticsDataBase cdb =
+                    mergeCatalogColumnStatisticsDataBoolean(columnStatisticsDataList);
+            CatalogColumnStatisticsDataBoolean cdb1 = (CatalogColumnStatisticsDataBoolean) cdb;
+            LOG.info("merged statistics : colName: {}  statistics: {}", colName, cdb1);
+            return cdb;
         } else if (colStat instanceof CatalogColumnStatisticsDataDate) {
-            return mergeCatalogColumnStatisticsDataDate(columnStatisticsDataList);
+            CatalogColumnStatisticsDataBase cdb =
+                    mergeCatalogColumnStatisticsDataDate(columnStatisticsDataList);
+            CatalogColumnStatisticsDataDate cdd = (CatalogColumnStatisticsDataDate) cdb;
+            LOG.info("merged statistics : colName: {}  statistics: {}", colName, cdd);
+            return cdb;
         } else if (colStat instanceof CatalogColumnStatisticsDataDouble) {
-            return mergeCatalogColumnStatisticsDataDouble(columnStatisticsDataList);
+            CatalogColumnStatisticsDataBase cdb =
+                    mergeCatalogColumnStatisticsDataDouble(columnStatisticsDataList);
+            CatalogColumnStatisticsDataDouble cdd = (CatalogColumnStatisticsDataDouble) cdb;
+            LOG.info("merged statistics : colName: {}  statistics: {}", colName, cdd);
+            return cdb;
         } else if (colStat instanceof CatalogColumnStatisticsDataLong) {
-            return mergeCatalogColumnStatisticsDataLong(columnStatisticsDataList);
+            CatalogColumnStatisticsDataBase cdb =
+                    mergeCatalogColumnStatisticsDataLong(columnStatisticsDataList);
+            CatalogColumnStatisticsDataLong cdl = (CatalogColumnStatisticsDataLong) cdb;
+            LOG.info("merged statistics : colName: {}  statistics: {}", colName, cdl);
+            return cdb;
         } else if (colStat instanceof CatalogColumnStatisticsDataString) {
-            return mergeCatalogColumnStatisticsDataString(
-                    columnStatisticsDataList,
-                    partitions,
-                    hiveCatalog,
-                    cachePartitionRowCount,
-                    tablePath);
+            CatalogColumnStatisticsDataBase cdb =
+                    mergeCatalogColumnStatisticsDataString(
+                            columnStatisticsDataList,
+                            partitions,
+                            hiveCatalog,
+                            cachePartitionRowCount,
+                            tablePath);
+            CatalogColumnStatisticsDataString cds = (CatalogColumnStatisticsDataString) cdb;
+            LOG.info("merged statistics : colName: {}  statistics: {}", colName, cds);
+            return cdb;
         } else {
             return null;
         }
@@ -352,7 +379,7 @@ public class HiveStatsUtil {
             currentRowsCount += anotherRowsCount;
             // note: currently, we have no way to get ndv according the statistic from every single
             // partition, so we just sum the ndv, it may be inaccuracy
-            ndv = add(ndv, anotherColStat.getNdv());
+            ndv = max(ndv, anotherColStat.getNdv());
             nullCount = add(nullCount, anotherColStat.getNullCount());
             props.putAll(anotherColStat.getProperties());
         }
@@ -375,7 +402,7 @@ public class HiveStatsUtil {
             max = max(max, anotherColStat.getMax());
             // note: currently, we have no way to get ndv according the statistic from every single
             // partition, so we just sum the ndv, it may be inaccuracy
-            ndv = add(ndv, anotherColStat.getNdv());
+            ndv = max(ndv, anotherColStat.getNdv());
             nullCount = add(nullCount, anotherColStat.getNullCount());
             props.putAll(anotherColStat.getProperties());
         }
@@ -398,7 +425,7 @@ public class HiveStatsUtil {
             max = max(max, anotherColStat.getMax());
             // note: currently, we have no way to get ndv according the statistic from every single
             // partition, so we just sum the ndv, it may be inaccuracy
-            ndv = add(ndv, anotherColStat.getNdv());
+            ndv = max(ndv, anotherColStat.getNdv());
             nullCount = add(nullCount, anotherColStat.getNullCount());
             props.putAll(anotherColStat.getProperties());
         }
@@ -422,7 +449,7 @@ public class HiveStatsUtil {
             // note: currently, we have no way to get ndv according the statistic from every single
             // partition,
             // so we just sum the ndv, it may be inaccuracy
-            ndv = add(ndv, anotherColStat.getNdv());
+            ndv = max(ndv, anotherColStat.getNdv());
             nullCount = add(nullCount, anotherColStat.getNullCount());
             props.putAll(anotherColStat.getProperties());
         }
@@ -467,7 +494,7 @@ public class HiveStatsUtil {
                     stringStats.isSetMaxColLen() ? stringStats.getMaxColLen() : null,
                     stringStats.isSetAvgColLen() ? stringStats.getAvgColLen() : null,
                     stringStats.isSetNumDVs() ? stringStats.getNumDVs() : null,
-                    stringStats.isSetNumDVs() ? stringStats.getNumNulls() : null);
+                    stringStats.isSetNumNulls() ? stringStats.getNumNulls() : null);
         } else if (stats.isSetDecimalStats()) {
             DecimalColumnStatsData decimalStats = stats.getDecimalStats();
             // for now, just return CatalogColumnStatisticsDataDouble for decimal columns

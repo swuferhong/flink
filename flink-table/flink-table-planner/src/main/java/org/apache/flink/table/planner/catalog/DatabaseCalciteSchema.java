@@ -36,6 +36,8 @@ import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.schema.Schemas;
 import org.apache.calcite.schema.Table;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -53,6 +55,8 @@ class DatabaseCalciteSchema extends FlinkSchema {
     private final CatalogManager catalogManager;
     // Flag that tells if the current planner should work in a batch or streaming mode.
     private final boolean isStreamingMode;
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(DatabaseCalciteSchema.class);
 
     public DatabaseCalciteSchema(
             String catalogName,

@@ -59,6 +59,7 @@ public class CatalogTableStatisticsConverter {
         } else {
             columnStatsMap = new HashMap<>();
         }
+
         return new TableStats(rowCount, columnStatsMap);
     }
 

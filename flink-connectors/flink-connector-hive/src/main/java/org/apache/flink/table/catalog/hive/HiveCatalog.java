@@ -1650,11 +1650,6 @@ public class HiveCatalog extends AbstractCatalog {
                         new CatalogColumnStatistics(
                                 HiveStatsUtil.createCatalogColumnStats(
                                         partitionColumnStatistics, hiveVersion, this, tablePath));
-                LOG.info(
-                        "Hive getTableColumnStatistics {} for {} use time: {} ms.",
-                        catalogColumnStatistics,
-                        tablePath,
-                        System.currentTimeMillis() - startTimeMillis);
                 return catalogColumnStatistics;
             }
         } catch (TException e) {
