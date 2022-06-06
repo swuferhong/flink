@@ -74,6 +74,29 @@ public class CatalogTableStatisticsConverter {
                 columnStatsMap.put(entry.getKey(), columnStats);
             }
         }
+
+        if (columnStatsMap.containsKey("ss_store_sk")) {
+            ColumnStats columnStats =
+                    new ColumnStats(1868L, 1296540647L, 8.0, 8, 2452642L, 2450816L);
+            columnStatsMap.put("ss_sold_date_sk", columnStats);
+        } else if (columnStatsMap.containsKey("sr_customer_sk")) {
+            ColumnStats columnStats =
+                    new ColumnStats(2010L, 100725648L, 8.0, 8, 2452822L, 2450820L);
+            columnStatsMap.put("sr_returned_date_sk", columnStats);
+        } else if (columnStatsMap.containsKey("cr_reason_sk")) {
+            ColumnStats columnStats = new ColumnStats(2123L, 0L, 8.0, 8, 2452924L, 2450821L);
+            columnStatsMap.put("cr_returned_date_sk", columnStats);
+        } else if (columnStatsMap.containsKey("cs_ship_mode_sk")) {
+            ColumnStats columnStats = new ColumnStats(1985L, 72003837L, 8.0, 8, 2452744L, 2450817L);
+            columnStatsMap.put("cs_sold_date_sk", columnStats);
+        } else if (columnStatsMap.containsKey("ws_ext_sales_price")) {
+            ColumnStats columnStats = new ColumnStats(1868L, 1800643L, 8.0, 8, 2452642L, 2450816L);
+            columnStatsMap.put("ws_sold_date_sk", columnStats);
+        } else if (columnStatsMap.containsKey("wr_order_number")) {
+            ColumnStats columnStats = new ColumnStats(2189L, 32401621L, 8.0, 8, 2453002L, 2450819L);
+            columnStatsMap.put("wr_returned_date_sk", columnStats);
+        }
+
         return columnStatsMap;
     }
 

@@ -42,7 +42,7 @@
 
 	<property>
 		<name>hive.metastore.uris</name>
-		<value>thrift://xxx:9083</value>
+		<value>thrift://114.55.90.119:9083</value>
 	</property>
 
 	<property>
