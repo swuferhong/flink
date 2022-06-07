@@ -1413,6 +1413,16 @@ public abstract class CatalogTest {
         }
 
         @Override
+        public boolean isPartitioned() {
+            return false;
+        }
+
+        @Override
+        public List<String> getPartitionKeys() {
+            return Collections.emptyList();
+        }
+
+        @Override
         public String getOriginalQuery() {
             return "";
         }
