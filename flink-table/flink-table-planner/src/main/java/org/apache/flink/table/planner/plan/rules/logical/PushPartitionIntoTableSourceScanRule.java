@@ -193,6 +193,7 @@ public class PushPartitionIntoTableSourceScanRule extends RelOptRule {
             ObjectPath tablePath = identifier.toObjectPath();
             Catalog catalog = tableSourceTable.contextResolvedTable().getCatalog().get();
             for (Map<String, String> partition : remainingPartitions) {
+                // 这里做了裁剪后，结果不太对，后期需要fix
                 Optional<TableStats> partitionStats =
                         getPartitionStats(catalog, tablePath, partition);
                 if (!partitionStats.isPresent()) {
