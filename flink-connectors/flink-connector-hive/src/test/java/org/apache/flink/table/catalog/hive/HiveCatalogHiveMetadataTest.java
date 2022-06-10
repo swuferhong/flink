@@ -18,6 +18,7 @@
 
 package org.apache.flink.table.catalog.hive;
 
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveTable;
 import org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveTable;
 import org.apache.flink.table.HiveVersionTestUtil;
@@ -29,7 +30,6 @@ import org.apache.flink.table.catalog.CatalogBaseTable;
 import org.apache.flink.table.catalog.CatalogFunction;
 import org.apache.flink.table.catalog.CatalogFunctionImpl;
 import org.apache.flink.table.catalog.CatalogPartition;
-import org.apache.flink.table.catalog.CatalogPartitionImpl;
 import org.apache.flink.table.catalog.CatalogPartitionSpec;
 import org.apache.flink.table.catalog.CatalogPropertiesUtil;
 import org.apache.flink.table.catalog.CatalogTable;
@@ -49,6 +49,8 @@ import org.apache.flink.table.catalog.stats.CatalogColumnStatisticsDataString;
 import org.apache.flink.table.catalog.stats.CatalogTableStatistics;
 import org.apache.flink.table.catalog.stats.Date;
 import org.apache.flink.table.factories.FactoryUtil;
+import org.apache.flink.table.plan.stats.TableStats;
+import org.apache.flink.table.planner.utils.CatalogTableStatisticsConverter;
 import org.apache.flink.table.types.AbstractDataType;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.util.StringUtils;
@@ -63,7 +65,6 @@ import org.junit.Assume;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.util.Collections;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -334,6 +335,17 @@ public class HiveCatalogHiveMetadataTest extends HiveCatalogMetadataTestBase {
                 path1, partition1Spec, new CatalogTableStatistics(3L, 1L, 2L, 2L), false);
         catalog.alterPartitionStatistics(
                 path1, partition2Spec, new CatalogTableStatistics(1L, 1L, 2L, 2L), false);
+
+        Map<String, String> specPartitionMap = new HashMap<>();
+        specPartitionMap.put("second", "2010-04-21 09:45:00");
+        specPartitionMap.put("third", "2000");
+
+        Tuple2<CatalogTableStatistics, CatalogColumnStatistics> partitionTableStats =
+                ((HiveCatalog) catalog)
+                        .getPartitionTableStats(path1, Collections.singletonList(specPartitionMap));
+        TableStats tableStats =
+                CatalogTableStatisticsConverter.convertToTableStats(
+                        partitionTableStats.f0, partitionTableStats.f1);
 
         // avgLength = (3 * 3 + 1 * 1) / (3 + 1)
         columnStatisticsDataBaseMap.put(

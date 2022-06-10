@@ -151,6 +151,7 @@ public class HiveTableSource
             providerContext.generateUid(HIVE_TRANSFORMATION).ifPresent(sourceStream::uid);
             return sourceStream;
         } else {
+            long startTime = System.currentTimeMillis();
             List<HiveTablePartition> hivePartitionsToRead =
                     getAllPartitions(
                             jobConf,
@@ -158,6 +159,10 @@ public class HiveTableSource
                             tablePath,
                             catalogTable.getPartitionKeys(),
                             remainingPartitions);
+            System.out.println(
+                    String.format(
+                            "hive table source to get all partition cost: %s",
+                            System.currentTimeMillis() - startTime));
 
             int parallelism =
                     new HiveParallelismInference(tablePath, flinkConf)
