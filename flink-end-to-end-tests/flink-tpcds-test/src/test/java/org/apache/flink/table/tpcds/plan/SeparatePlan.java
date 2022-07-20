@@ -29,8 +29,7 @@ import java.util.List;
 
 public class SeparatePlan {
     public static void main(String[] args) throws IOException, URISyntaxException {
-        String filePath =
-                "org/apache/flink/table/tpcds/plan/TpcdsWithHiveCatalogOnMultiPartitionPlanTest.xml";
+        String filePath = "oldPlan/TpcdsWithHiveCatalogOnMultiPartitionPlanTest.xml";
         String path = SeparatePlan.class.getResource("/" + filePath).getPath();
         File file = new File(path);
         List<String> lines = Files.readAllLines(file.toPath());

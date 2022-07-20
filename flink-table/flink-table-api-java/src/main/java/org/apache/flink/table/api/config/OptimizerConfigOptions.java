@@ -52,7 +52,7 @@ public class OptimizerConfigOptions {
     public static final ConfigOption<Long> TABLE_OPTIMIZER_BROADCAST_JOIN_THRESHOLD =
             key("table.optimizer.join.broadcast-threshold")
                     .longType()
-                    .defaultValue(1024 * 1024L)
+                    .defaultValue(1024 * 10240L)
                     .withDescription(
                             "Configures the maximum size in bytes for a table that will be broadcast to all worker "
                                     + "nodes when performing a join. By setting this value to -1 to disable broadcasting.");

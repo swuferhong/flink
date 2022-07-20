@@ -41,12 +41,6 @@ public class TpcdsWithHiveCatalogOnMultiPartitionPlanTest extends TpcdsPlanTest 
                         "hive", multiPartition_database, HIVE_CONF_DIR, HIVE_VERSION);
         tEnv.registerCatalog("hive", catalogWrapper);
         tEnv.useCatalog("hive");
-        //        HiveCatalog catalog =
-        //                new HiveCatalog("hive", multiPartition_database, HIVE_CONF_DIR,
-        // HIVE_VERSION);
-        //        tEnv.registerCatalog("hive", catalog);
-        //        tEnv.useCatalog("hive");
-
         String sql = getSqlFile(caseName);
         util.verifyExecPlan(sql);
     }
