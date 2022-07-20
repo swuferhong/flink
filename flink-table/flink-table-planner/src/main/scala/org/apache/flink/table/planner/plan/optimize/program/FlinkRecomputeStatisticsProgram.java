@@ -18,11 +18,10 @@
 
 package org.apache.flink.table.planner.plan.optimize.program;
 
+import org.apache.flink.table.api.config.OptimizerConfigOptions;
 import org.apache.flink.table.catalog.Catalog;
-import org.apache.flink.table.catalog.CatalogPartitionSpec;
 import org.apache.flink.table.catalog.ObjectIdentifier;
 import org.apache.flink.table.catalog.ObjectPath;
-import org.apache.flink.table.catalog.exceptions.PartitionNotExistException;
 import org.apache.flink.table.catalog.stats.CatalogColumnStatistics;
 import org.apache.flink.table.catalog.stats.CatalogTableStatistics;
 import org.apache.flink.table.connector.source.DynamicTableSource;
@@ -42,9 +41,8 @@ import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.logical.LogicalTableScan;
-
-import java.util.Map;
-import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.apache.flink.table.api.config.OptimizerConfigOptions.TABLE_OPTIMIZER_SOURCE_REPORT_STATISTICS_ENABLED;
 
@@ -55,6 +53,9 @@ import static org.apache.flink.table.api.config.OptimizerConfigOptions.TABLE_OPT
  * way can avoid getting statistics again and again.
  */
 public class FlinkRecomputeStatisticsProgram implements FlinkOptimizeProgram<BatchOptimizeContext> {
+
+    private static final Logger LOG =
+            LoggerFactory.getLogger(FlinkRecomputeStatisticsProgram.class);
 
     @Override
     public RelNode optimize(RelNode root, BatchOptimizeContext context) {
@@ -83,13 +84,19 @@ public class FlinkRecomputeStatisticsProgram implements FlinkOptimizeProgram<Bat
                 context.getTableConfig().get(TABLE_OPTIMIZER_SOURCE_REPORT_STATISTICS_ENABLED)
                         && table.tableSource() instanceof SupportsStatisticReport;
 
+        LOG.info("recompute statistics report enable: {}", reportStatEnabled);
+
         SourceAbilitySpec[] specs = table.abilitySpecs();
         PartitionPushDownSpec partitionPushDownSpec = getSpec(specs, PartitionPushDownSpec.class);
 
         FilterPushDownSpec filterPushDownSpec = getSpec(specs, FilterPushDownSpec.class);
         TableStats newTableStat =
                 recomputeStatistics(
-                        table, partitionPushDownSpec, filterPushDownSpec, reportStatEnabled);
+                        context,
+                        table,
+                        partitionPushDownSpec,
+                        filterPushDownSpec,
+                        reportStatEnabled);
         FlinkStatistic newStatistic =
                 FlinkStatistic.builder()
                         .statistic(table.getStatistic())
@@ -101,6 +108,7 @@ public class FlinkRecomputeStatisticsProgram implements FlinkOptimizeProgram<Bat
     }
 
     private TableStats recomputeStatistics(
+            FlinkContext context,
             TableSourceTable table,
             PartitionPushDownSpec partitionPushDownSpec,
             FilterPushDownSpec filterPushDownSpec,
@@ -122,7 +130,12 @@ public class FlinkRecomputeStatisticsProgram implements FlinkOptimizeProgram<Bat
             if (partitionPushDownSpec != null) {
                 // partition push down
                 // try to get the statistics for the remaining partitions
-                TableStats newTableStat = getPartitionsTableStats(table, partitionPushDownSpec);
+                long begin = System.currentTimeMillis();
+                TableStats newTableStat =
+                        getPartitionsTableStats(context, table, partitionPushDownSpec);
+                LOG.info(
+                        "recompute stats get partition stats after costs : {}",
+                        System.currentTimeMillis() - begin);
                 // call reportStatistics method if reportStatEnabled is true and the partition
                 // statistics is unknown
                 if (reportStatEnabled && isUnknownTableStats(newTableStat)) {
@@ -147,45 +160,57 @@ public class FlinkRecomputeStatisticsProgram implements FlinkOptimizeProgram<Bat
     }
 
     private TableStats getPartitionsTableStats(
-            TableSourceTable table, PartitionPushDownSpec partitionPushDownSpec) {
+            FlinkContext context,
+            TableSourceTable tableSourceTable,
+            PartitionPushDownSpec partitionPushDownSpec) {
+        // build new statistic
         TableStats newTableStat = null;
-        if (table.contextResolvedTable().isPermanent()) {
-            ObjectIdentifier identifier = table.contextResolvedTable().getIdentifier();
+        if (tableSourceTable.contextResolvedTable().isPermanent()) {
+            ObjectIdentifier identifier = tableSourceTable.contextResolvedTable().getIdentifier();
             ObjectPath tablePath = identifier.toObjectPath();
-            Catalog catalog = table.contextResolvedTable().getCatalog().get();
-            for (Map<String, String> partition : partitionPushDownSpec.getPartitions()) {
-                Optional<TableStats> partitionStats =
-                        getPartitionStats(catalog, tablePath, partition);
-                if (!partitionStats.isPresent()) {
-                    // clear all information before
-                    newTableStat = null;
-                    break;
-                } else {
+            Catalog catalog = tableSourceTable.contextResolvedTable().getCatalog().get();
+
+            // get new table stat
+            long startTimeMillis = System.currentTimeMillis();
+            try {
+                if (context.getTableConfig()
+                        .get(
+                                OptimizerConfigOptions
+                                        .TABLE_OPTIMIZER_PUSH_PARTITION_USE_REMAINING_STATS)) {
+                    LOG.info("recompute stats in USE_REMAINING_STATS");
+                    // if true, use remaining table stats
+                    org.apache.flink.api.java.tuple.Tuple2<
+                                    CatalogTableStatistics, CatalogColumnStatistics>
+                            partitionTableStats =
+                                    catalog.getPartitionTableStats(
+                                            tablePath, partitionPushDownSpec.getPartitions());
+
                     newTableStat =
-                            newTableStat == null
-                                    ? partitionStats.get()
-                                    : newTableStat.merge(partitionStats.get());
+                            CatalogTableStatisticsConverter.convertToTableStats(
+                                    partitionTableStats.f0, partitionTableStats.f1);
+                } else {
+                    // if false, use all table stats
+                    CatalogTableStatistics tableStatistics = catalog.getTableStatistics(tablePath);
+                    CatalogColumnStatistics tableColumnStatistics =
+                            catalog.getTableColumnStatistics(tablePath);
+                    newTableStat =
+                            CatalogTableStatisticsConverter.convertToTableStats(
+                                    tableStatistics, tableColumnStatistics);
                 }
+
+                LOG.info(
+                        "after partition prune recompute statistics,  table {} remain {} "
+                                + " partitions, and get partition statistic use time: {} ms.",
+                        partitionPushDownSpec.getPartitions().size(),
+                        tablePath,
+                        System.currentTimeMillis() - startTimeMillis);
+
+            } catch (Exception e) {
+                throw new RuntimeException(e);
             }
         }
 
         return newTableStat;
-    }
-
-    private Optional<TableStats> getPartitionStats(
-            Catalog catalog, ObjectPath tablePath, Map<String, String> partition) {
-        try {
-            CatalogPartitionSpec spec = new CatalogPartitionSpec(partition);
-            CatalogTableStatistics partitionStat = catalog.getPartitionStatistics(tablePath, spec);
-            CatalogColumnStatistics partitionColStat =
-                    catalog.getPartitionColumnStatistics(tablePath, spec);
-            TableStats stats =
-                    CatalogTableStatisticsConverter.convertToTableStats(
-                            partitionStat, partitionColStat);
-            return Optional.of(stats);
-        } catch (PartitionNotExistException e) {
-            return Optional.empty();
-        }
     }
 
     @SuppressWarnings({"unchecked", "raw"})

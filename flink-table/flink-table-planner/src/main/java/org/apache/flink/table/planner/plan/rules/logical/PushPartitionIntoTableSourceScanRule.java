@@ -18,9 +18,7 @@
 
 package org.apache.flink.table.planner.plan.rules.logical;
 
-import org.apache.flink.table.api.TableConfig;
 import org.apache.flink.table.api.TableException;
-import org.apache.flink.table.api.config.OptimizerConfigOptions;
 import org.apache.flink.table.catalog.Catalog;
 import org.apache.flink.table.catalog.CatalogPartitionSpec;
 import org.apache.flink.table.catalog.CatalogTable;
@@ -44,7 +42,6 @@ import org.apache.flink.table.planner.plan.abilities.source.PartitionPushDownSpe
 import org.apache.flink.table.planner.plan.abilities.source.SourceAbilityContext;
 import org.apache.flink.table.planner.plan.abilities.source.SourceAbilitySpec;
 import org.apache.flink.table.planner.plan.schema.TableSourceTable;
-import org.apache.flink.table.planner.plan.stats.FlinkStatistic;
 import org.apache.flink.table.planner.plan.utils.FlinkRelOptUtil;
 import org.apache.flink.table.planner.plan.utils.PartitionPruner;
 import org.apache.flink.table.planner.plan.utils.RexNodeExtractor;
@@ -124,8 +121,6 @@ public class PushPartitionIntoTableSourceScanRule extends RelOptRule {
 
     @Override
     public void onMatch(RelOptRuleCall call) {
-        TableConfig tableConfig =
-                call.getPlanner().getContext().unwrap(FlinkContext.class).getTableConfig();
         Filter filter = call.rel(0);
         LogicalTableScan scan = call.rel(1);
         TableSourceTable tableSourceTable = scan.getTable().unwrap(TableSourceTable.class);
@@ -198,59 +193,11 @@ public class PushPartitionIntoTableSourceScanRule extends RelOptRule {
                 new PartitionPushDownSpec(remainingPartitions);
         partitionPushDownSpec.apply(dynamicTableSource, SourceAbilityContext.from(scan));
 
-        // build new statistic
-        TableStats newTableStat = null;
-        if (tableSourceTable.contextResolvedTable().isPermanent()) {
-            ObjectIdentifier identifier = tableSourceTable.contextResolvedTable().getIdentifier();
-            ObjectPath tablePath = identifier.toObjectPath();
-            Catalog catalog = tableSourceTable.contextResolvedTable().getCatalog().get();
-
-            // get new table stat
-            long startTimeMillis = System.currentTimeMillis();
-            try {
-                if (tableConfig.get(
-                        OptimizerConfigOptions
-                                .TABLE_OPTIMIZER_PUSH_PARTITION_USE_REMAINING_STATS)) {
-                    // if true, use remaining table stats
-                    org.apache.flink.api.java.tuple.Tuple2<
-                                    CatalogTableStatistics, CatalogColumnStatistics>
-                            partitionTableStats =
-                                    catalog.getPartitionTableStats(tablePath, remainingPartitions);
-
-                    newTableStat =
-                            CatalogTableStatisticsConverter.convertToTableStats(
-                                    partitionTableStats.f0, partitionTableStats.f1);
-                } else {
-                    // if false, use all table stats
-                    CatalogTableStatistics tableStatistics = catalog.getTableStatistics(tablePath);
-                    CatalogColumnStatistics tableColumnStatistics =
-                            catalog.getTableColumnStatistics(tablePath);
-                    newTableStat =
-                            CatalogTableStatisticsConverter.convertToTableStats(
-                                    tableStatistics, tableColumnStatistics);
-                }
-
-                LOG.info(
-                        "after partition prune,  table {} remain {} partitions, and get partition statistic use time: {} ms.",
-                        remainingPartitions.size(),
-                        tablePath,
-                        System.currentTimeMillis() - startTimeMillis);
-
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        FlinkStatistic newStatistic =
-                FlinkStatistic.builder()
-                        .statistic(tableSourceTable.getStatistic())
-                        .tableStats(newTableStat)
-                        .build();
-
         TableSourceTable newTableSourceTable =
                 tableSourceTable.copy(
                         dynamicTableSource,
-                        newStatistic,
+                        // the statistics will be updated in FlinkRecomputeStatisticsProgram
+                        tableSourceTable.getStatistic(),
                         new SourceAbilitySpec[] {partitionPushDownSpec});
         LogicalTableScan newScan =
                 LogicalTableScan.create(scan.getCluster(), newTableSourceTable, scan.getHints());
