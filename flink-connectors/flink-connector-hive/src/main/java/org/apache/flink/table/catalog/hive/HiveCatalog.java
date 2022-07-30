@@ -163,7 +163,7 @@ public class HiveCatalog extends AbstractCatalog {
     private static final String FLINK_PYTHON_FUNCTION_PREFIX = "flink:python:";
 
     private final HiveConf hiveConf;
-    private final String hiveVersion;
+    protected final String hiveVersion;
     private final HiveShim hiveShim;
 
     @VisibleForTesting HiveMetastoreClientWrapper client;
@@ -1479,7 +1479,7 @@ public class HiveCatalog extends AbstractCatalog {
                 );
     }
 
-    private static boolean isTablePartitioned(Table hiveTable) {
+    protected static boolean isTablePartitioned(Table hiveTable) {
         return hiveTable.getPartitionKeysSize() != 0;
     }
 
