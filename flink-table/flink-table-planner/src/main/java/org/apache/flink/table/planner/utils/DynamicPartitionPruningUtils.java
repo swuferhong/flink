@@ -171,7 +171,20 @@ public class DynamicPartitionPruningUtils {
                     joinKeys.stream()
                             .map(i -> scan.getRowType().getFieldNames().get(i))
                             .collect(Collectors.toList());
-            factSideFactors.isSuitableFactScanSource = !candidateFields.isEmpty();
+            if (candidateFields.isEmpty()) {
+                factSideFactors.isSuitableFactScanSource = false;
+                return;
+            }
+
+            List<String> suitableFields = new ArrayList<>();
+
+            for (String candidateField : candidateFields) {
+                if (partitionKeys.contains(candidateField)) {
+                    suitableFields.add(candidateField);
+                }
+            }
+
+            factSideFactors.isSuitableFactScanSource = !suitableFields.isEmpty();
         } else if (rel instanceof HepRelVertex) {
             visitFactSide(((HepRelVertex) rel).getCurrentRel(), factSideFactors, joinKeys);
         } else if (rel instanceof Exchange || rel instanceof Filter) {
