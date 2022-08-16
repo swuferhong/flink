@@ -107,7 +107,7 @@ public class HiveSourceFileEnumerator implements FileEnumerator {
         for (HiveTablePartition partition : partitions) {
             String serializationLib =
                     partition.getStorageDescriptor().getSerdeInfo().getSerializationLib();
-            if (!"orc".equalsIgnoreCase(serializationLib)) {
+            if (!serializationLib.contains("orc")) {
                 return false;
             }
         }
