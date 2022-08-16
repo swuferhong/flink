@@ -18,6 +18,8 @@
 
 package org.apache.flink.table.tpcds.plan;
 
+import org.apache.flink.api.common.BatchShuffleMode;
+import org.apache.flink.configuration.ExecutionOptions;
 import org.apache.flink.table.api.TableConfig;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
@@ -67,6 +69,9 @@ public class TpcdsPlanTest extends TableTestBase {
         tEnv.getConfig()
                 .getConfiguration()
                 .setBoolean(OptimizerConfigOptions.TABLE_OPTIMIZER_DYNAMIC_FILTERING_ENABLED, true);
+        tEnv.getConfig()
+                .getConfiguration()
+                .set(ExecutionOptions.BATCH_SHUFFLE_MODE, BatchShuffleMode.ALL_EXCHANGES_BLOCKING);
     }
 
     @Test
@@ -77,7 +82,7 @@ public class TpcdsPlanTest extends TableTestBase {
 
     @Parameterized.Parameters(name = "q{0}")
     public static Collection<String> parameters() {
-        return Arrays.asList("58");
+        return Arrays.asList("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
     }
 
     protected String getSqlFile(String caseName) {

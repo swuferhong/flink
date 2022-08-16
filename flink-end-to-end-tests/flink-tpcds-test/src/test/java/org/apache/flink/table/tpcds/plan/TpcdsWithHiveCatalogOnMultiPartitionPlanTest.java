@@ -18,9 +18,11 @@
 
 package org.apache.flink.table.tpcds.plan;
 
+import org.apache.flink.connectors.hive.HiveOptions;
+import org.apache.flink.table.api.ExplainDetail;
+import org.apache.flink.table.api.config.ExecutionConfigOptions;
 import org.apache.flink.table.catalog.exceptions.DatabaseNotExistException;
 import org.apache.flink.table.catalog.hive.HiveCatalog;
-import org.apache.flink.table.catalog.hive.HiveCatalogWrapper;
 
 import org.junit.Test;
 
@@ -36,19 +38,39 @@ public class TpcdsWithHiveCatalogOnMultiPartitionPlanTest extends TpcdsPlanTest 
 
     @Test
     public void getExecPlan() {
-        HiveCatalogWrapper catalogWrapper =
-                new HiveCatalogWrapper(
-                        "hive", multiPartition_database, HIVE_CONF_DIR, HIVE_VERSION);
-        tEnv.registerCatalog("hive", catalogWrapper);
-        tEnv.useCatalog("hive");
-        //        HiveCatalog catalog =
-        //                new HiveCatalog("hive", multiPartition_database, HIVE_CONF_DIR,
-        // HIVE_VERSION);
-        //        tEnv.registerCatalog("hive", catalog);
+        //        HiveCatalogWrapper catalogWrapper =
+        //                new HiveCatalogWrapper(
+        //                        "hive", multiPartition_database, HIVE_CONF_DIR, HIVE_VERSION);
+        //        tEnv.registerCatalog("hive", catalogWrapper);
         //        tEnv.useCatalog("hive");
+        HiveCatalog catalog =
+                new HiveCatalog("hive", multiPartition_database, HIVE_CONF_DIR, HIVE_VERSION);
+        tEnv.registerCatalog("hive", catalog);
+        tEnv.useCatalog("hive");
 
         String sql = getSqlFile(caseName);
         util.verifyExecPlan(removeLicense(sql));
+    }
+
+    @Test
+    public void getExplain() {
+        HiveCatalog catalog =
+                new HiveCatalog("hive", multiPartition_database, HIVE_CONF_DIR, HIVE_VERSION);
+        tEnv.registerCatalog("hive", catalog);
+        tEnv.useCatalog("hive");
+
+        tEnv.getConfig()
+                .getConfiguration()
+                .setInteger(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 1500);
+        tEnv.getConfig()
+                .getConfiguration()
+                .setBoolean(HiveOptions.TABLE_EXEC_HIVE_INFER_SOURCE_PARALLELISM, true);
+        tEnv.getConfig()
+                .getConfiguration()
+                .setInteger(HiveOptions.TABLE_EXEC_HIVE_INFER_SOURCE_PARALLELISM_MAX, 1500);
+
+        String sql = getSqlFile(caseName);
+        tEnv.explainSql(sql, ExplainDetail.JSON_EXECUTION_PLAN);
     }
 
     private String removeLicense(String sql) {
