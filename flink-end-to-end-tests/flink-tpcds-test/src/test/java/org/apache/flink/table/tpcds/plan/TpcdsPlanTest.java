@@ -82,7 +82,11 @@ public class TpcdsPlanTest extends TableTestBase {
 
     @Parameterized.Parameters(name = "q{0}")
     public static Collection<String> parameters() {
-        return Arrays.asList("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
+        return Arrays.asList("38");
+        //        return Arrays.asList(
+        //                "47", "74", "5", "4", "87", "38", "14a", "57", "31", "75", "23b", "51",
+        // "6", "23a",
+        //                "72", "80");
     }
 
     protected String getSqlFile(String caseName) {
