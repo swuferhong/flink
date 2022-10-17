@@ -50,6 +50,7 @@ public class FlinkRelMetadataQuery extends RelMetadataQuery {
     private FlinkMetadata.ModifiedMonotonicity.Handler modifiedMonotonicityHandler;
     private FlinkMetadata.WindowProperties.Handler windowPropertiesHandler;
     private FlinkMetadata.UpsertKeys.Handler upsertKeysHandler;
+    private FlinkMetadata.StatisticsAvailable.Handler statisticsAvailableHandle;
 
     /**
      * Returns an instance of FlinkRelMetadataQuery. It ensures that cycles do not occur while
@@ -85,6 +86,7 @@ public class FlinkRelMetadataQuery extends RelMetadataQuery {
         this.modifiedMonotonicityHandler = HANDLERS.modifiedMonotonicityHandler;
         this.windowPropertiesHandler = HANDLERS.windowPropertiesHandler;
         this.upsertKeysHandler = HANDLERS.upsertKeysHandler;
+        this.statisticsAvailableHandle = HANDLERS.statisticsAvailableHandle;
     }
 
     /** Extended handlers. */
@@ -107,6 +109,8 @@ public class FlinkRelMetadataQuery extends RelMetadataQuery {
                 initialHandler(FlinkMetadata.WindowProperties.Handler.class);
         private FlinkMetadata.UpsertKeys.Handler upsertKeysHandler =
                 initialHandler(FlinkMetadata.UpsertKeys.Handler.class);
+        private FlinkMetadata.StatisticsAvailable.Handler statisticsAvailableHandle =
+                initialHandler(FlinkMetadata.StatisticsAvailable.Handler.class);
     }
 
     /**
@@ -187,6 +191,8 @@ public class FlinkRelMetadataQuery extends RelMetadataQuery {
             }
         }
     }
+
+    // Handle 用来探测有没有 suitable table stats
 
     /**
      * Returns the (minimum) unique groups of the given columns.
@@ -285,6 +291,17 @@ public class FlinkRelMetadataQuery extends RelMetadataQuery {
                 return upsertKeysHandler.getUpsertKeys(rel, this);
             } catch (JaninoRelMetadataProvider.NoHandler e) {
                 upsertKeysHandler = revise(e.relClass, FlinkMetadata.UpsertKeys.DEF);
+            }
+        }
+    }
+
+    public boolean getIsStatisticsAvailable(RelNode rel) {
+        for (; ; ) {
+            try {
+                return statisticsAvailableHandle.getIsStatisticsAvailable(rel, this);
+            } catch (JaninoRelMetadataProvider.NoHandler e) {
+                statisticsAvailableHandle =
+                        revise(e.relClass, FlinkMetadata.StatisticsAvailable.DEF);
             }
         }
     }

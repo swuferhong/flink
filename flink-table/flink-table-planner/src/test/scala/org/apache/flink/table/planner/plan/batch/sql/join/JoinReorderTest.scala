@@ -22,4 +22,6 @@ import org.apache.flink.table.planner.utils.TableTestUtil
 
 class JoinReorderTest extends JoinReorderTestBase {
   override protected def getTableTestUtil: TableTestUtil = batchTestUtil()
+
+  override protected def getProperties: String = "'bounded' = 'true'"
 }

@@ -17,8 +17,8 @@
  */
 package org.apache.flink.table.planner.plan.rules.logical
 
-import org.apache.flink.api.scala._
-import org.apache.flink.table.api._
+import org.apache.flink.table.catalog.{GenericInMemoryCatalog, ObjectPath}
+import org.apache.flink.table.catalog.stats.CatalogTableStatistics
 import org.apache.flink.table.planner.plan.optimize.program.{FlinkBatchProgram, FlinkHepRuleSetProgramBuilder, HEP_RULES_EXECUTION_TYPE}
 import org.apache.flink.table.planner.utils.{TableConfigUtils, TableTestBase}
 
@@ -29,7 +29,9 @@ import org.junit.{Before, Test}
 
 /** Tests for [[org.apache.flink.table.planner.plan.rules.logical.FlinkJoinToMultiJoinRule]]. */
 class FlinkJoinToMultiJoinRuleTest extends TableTestBase {
+
   private val util = batchTestUtil()
+  private val catalog = new GenericInMemoryCatalog("catalog1", "default_db")
 
   @Before
   def setup(): Unit = {
@@ -44,20 +46,95 @@ class FlinkJoinToMultiJoinRuleTest extends TableTestBase {
         .build()
     )
 
-    util.addTableSource[(Int, Long)]("T1", 'a, 'b)
-    util.addTableSource[(Int, Long)]("T2", 'c, 'd)
-    util.addTableSource[(Int, Long)]("T3", 'e, 'f)
+    catalog.open()
+    util.tableEnv.registerCatalog("catalog1", catalog)
+    util.tableEnv.useCatalog("catalog1")
+
+    val ddl1 =
+      """
+        | CREATE TABLE catalog1.default_db.T1 ( 
+        |  a int,
+        |  b bigint
+        |  ) WITH (
+        |  'connector' = 'values',
+        |  'bounded' = 'true'
+        |  )
+        |""".stripMargin
+    util.tableEnv.executeSql(ddl1)
+
+    val ddl2 =
+      """
+        | CREATE TABLE catalog1.default_db.T2 ( 
+        |  c int,
+        |  d bigint
+        |  ) WITH (
+        |  'connector' = 'values',
+        |  'bounded' = 'true'
+        |  )
+        |""".stripMargin
+    util.tableEnv.executeSql(ddl2)
+
+    val ddl3 =
+      """
+        | CREATE TABLE catalog1.default_db.T3 ( 
+        |  e int,
+        |  f bigint
+        |  ) WITH (
+        |  'connector' = 'values',
+        |  'bounded' = 'true'
+        |  )
+        |""".stripMargin
+    util.tableEnv.executeSql(ddl3)
+
+    val ddl4 =
+      """
+        | CREATE TABLE catalog1.default_db.T4 ( 
+        |  g int,
+        |  h bigint
+        |  ) WITH (
+        |  'connector' = 'values',
+        |  'bounded' = 'true'
+        |  )
+        |""".stripMargin
+    util.tableEnv.executeSql(ddl4)
+
+    val ddl5 =
+      """
+        | CREATE TABLE catalog1.default_db.T5 ( 
+        |  i int,
+        |  j bigint
+        |  ) WITH (
+        |  'connector' = 'values',
+        |  'bounded' = 'true'
+        |  )
+        |""".stripMargin
+    util.tableEnv.executeSql(ddl5)
   }
 
   @Test
   def testInnerJoinInnerJoin(): Unit = {
-    // Can translate join to multi join.
+    // Can not translate join to multi join because these tables have no table statistics.
+    val sqlQuery = "SELECT * FROM T1, T2, T3 WHERE a = c AND a = e"
+    util.verifyRelPlan(sqlQuery)
+  }
+
+  @Test
+  def testInnerJoinInnerJoinWithStatistics(): Unit = {
+    // Can translate join to multi join
+    alterTableStatics()
     val sqlQuery = "SELECT * FROM T1, T2, T3 WHERE a = c AND a = e"
     util.verifyRelPlan(sqlQuery)
   }
 
   @Test
   def testInnerJoinLeftOuterJoin(): Unit = {
+    val sqlQuery = "SELECT * FROM T1 JOIN T2 ON a =c LEFT OUTER JOIN T3 ON a = e"
+    util.verifyRelPlan(sqlQuery)
+  }
+
+  @Test
+  def testInnerJoinLeftOuterJoinWithStatistics(): Unit = {
+    alterTableStatics()
     val sqlQuery = "SELECT * FROM T1 JOIN T2 ON a =c LEFT OUTER JOIN T3 ON a = e"
     util.verifyRelPlan(sqlQuery)
   }
@@ -71,7 +148,16 @@ class FlinkJoinToMultiJoinRuleTest extends TableTestBase {
 
   @Test
   def testLeftOuterJoinLeftOuterJoin(): Unit = {
+    // Can not translate join to multi join because of no table statistics.
+    val sqlQuery =
+      "SELECT * FROM T1 LEFT OUTER JOIN T2 ON a = c LEFT OUTER JOIN (SELECT * FROM T3) ON a = e"
+    util.verifyRelPlan(sqlQuery)
+  }
+
+  @Test
+  def testLeftOuterJoinLeftOuterJoinWithStatistics(): Unit = {
     // Can translate join to multi join.
+    alterTableStatics()
     val sqlQuery =
       "SELECT * FROM T1 LEFT OUTER JOIN T2 ON a = c LEFT OUTER JOIN (SELECT * FROM T3) ON a = e"
     util.verifyRelPlan(sqlQuery)
@@ -93,6 +179,14 @@ class FlinkJoinToMultiJoinRuleTest extends TableTestBase {
   }
 
   @Test
+  def testLeftOuterJoinInnerJoinWithStatistics(): Unit = {
+    alterTableStatics()
+    val sqlQuery =
+      "SELECT * FROM T1 LEFT OUTER JOIN T2 ON a = c JOIN (SELECT * FROM T3) ON a = e"
+    util.verifyRelPlan(sqlQuery)
+  }
+
+  @Test
   def testRightOuterJoinRightOuterJoin(): Unit = {
     val sqlQuery =
       "SELECT * FROM T1 RIGHT OUTER JOIN T2 ON a = c RIGHT OUTER JOIN (SELECT * FROM T3) ON a = e"
@@ -101,7 +195,15 @@ class FlinkJoinToMultiJoinRuleTest extends TableTestBase {
 
   @Test
   def testSubRightOuterJoinQuery(): Unit = {
+    val sqlQuery =
+      "SELECT * FROM T3 RIGHT OUTER JOIN (SELECT * FROM T1 RIGHT OUTER JOIN T2 ON a = c) t ON t.a = T3.e"
+    util.verifyRelPlan(sqlQuery)
+  }
+
+  @Test
+  def testSubRightOuterJoinQueryWithStatistics(): Unit = {
     // This case will be set into one multi join set.
+    alterTableStatics()
     val sqlQuery =
       "SELECT * FROM T3 RIGHT OUTER JOIN (SELECT * FROM T1 RIGHT OUTER JOIN T2 ON a = c) t ON t.a = T3.e"
     util.verifyRelPlan(sqlQuery)
@@ -117,6 +219,14 @@ class FlinkJoinToMultiJoinRuleTest extends TableTestBase {
 
   @Test
   def testRightOuterJoinInnerJoin(): Unit = {
+    val sqlQuery =
+      "SELECT * FROM T1 RIGHT OUTER JOIN T2 ON a = c JOIN (SELECT * FROM T3) ON a = e"
+    util.verifyRelPlan(sqlQuery)
+  }
+
+  @Test
+  def testRightOuterJoinInnerJoinWithStatistics(): Unit = {
+    alterTableStatics()
     val sqlQuery =
       "SELECT * FROM T1 RIGHT OUTER JOIN T2 ON a = c JOIN (SELECT * FROM T3) ON a = e"
     util.verifyRelPlan(sqlQuery)
@@ -210,9 +320,6 @@ class FlinkJoinToMultiJoinRuleTest extends TableTestBase {
 
   @Test
   def testInnerJoinLeftOuterJoinInnerJoinLeftOuterJoin(): Unit = {
-    util.addTableSource[(Int, Long)]("T4", 'g, 'h)
-    util.addTableSource[(Int, Long)]("T5", 'i, 'j)
-
     val sqlQuery =
       """
         |SELECT * FROM T1 JOIN T2 ON a = c LEFT OUTER JOIN 
@@ -225,10 +332,33 @@ class FlinkJoinToMultiJoinRuleTest extends TableTestBase {
   }
 
   @Test
-  def testLeftOuterJoinInnerJoinLeftOuterJoinInnerJoin(): Unit = {
-    util.addTableSource[(Int, Long)]("T4", 'g, 'h)
-    util.addTableSource[(Int, Long)]("T5", 'i, 'j)
+  def testInnerJoinLeftOuterJoinInnerJoinLeftOuterJoinWithStatistics(): Unit = {
+    alterTableStatics()
+    val sqlQuery =
+      """
+        |SELECT * FROM T1 JOIN T2 ON a = c LEFT OUTER JOIN 
+        |(SELECT * FROM T3) ON a = e JOIN
+        |(SELECT * FROM T4) ON a = g LEFT OUTER JOIN
+        |(SELECT * FROM T5) ON a = i
+        """.stripMargin
+    util.verifyRelPlan(sqlQuery)
+  }
 
+  @Test
+  def testLeftOuterJoinInnerJoinLeftOuterJoinInnerJoin(): Unit = {
+    val sqlQuery =
+      """
+        |SELECT * FROM T1 LEFT OUTER JOIN T2 ON a = c JOIN 
+        |(SELECT * FROM T3) ON a = e LEFT OUTER JOIN
+        |(SELECT * FROM T4) ON a = g JOIN
+        |(SELECT * FROM T5) ON a = i
+        """.stripMargin
+    util.verifyRelPlan(sqlQuery)
+  }
+
+  @Test
+  def testLeftOuterJoinInnerJoinLeftOuterJoinInnerJoinWithStatistics(): Unit = {
+    alterTableStatics()
     val sqlQuery =
       """
         |SELECT * FROM T1 LEFT OUTER JOIN T2 ON a = c JOIN 
@@ -241,9 +371,19 @@ class FlinkJoinToMultiJoinRuleTest extends TableTestBase {
 
   @Test
   def testInnerJoinRightOuterJoinInnerJoinRightOuterJoin(): Unit = {
-    util.addTableSource[(Int, Long)]("T4", 'g, 'h)
-    util.addTableSource[(Int, Long)]("T5", 'i, 'j)
+    val sqlQuery =
+      """
+        |SELECT * FROM T1 JOIN T2 ON a = c RIGHT OUTER JOIN 
+        |(SELECT * FROM T3) ON a = e JOIN
+        |(SELECT * FROM T4) ON a = g RIGHT OUTER JOIN
+        |(SELECT * FROM T5) ON a = i
+        """.stripMargin
+    util.verifyRelPlan(sqlQuery)
+  }
 
+  @Test
+  def testInnerJoinRightOuterJoinInnerJoinRightOuterJoinWithStatistics(): Unit = {
+    alterTableStatics()
     val sqlQuery =
       """
         |SELECT * FROM T1 JOIN T2 ON a = c RIGHT OUTER JOIN 
@@ -256,9 +396,6 @@ class FlinkJoinToMultiJoinRuleTest extends TableTestBase {
 
   @Test
   def testRightOuterJoinInnerJoinRightOuterJoinInnerJoin(): Unit = {
-    util.addTableSource[(Int, Long)]("T4", 'g, 'h)
-    util.addTableSource[(Int, Long)]("T5", 'i, 'j)
-
     val sqlQuery =
       """
         |SELECT * FROM T1 RIGHT OUTER JOIN T2 ON a = c JOIN
@@ -267,5 +404,28 @@ class FlinkJoinToMultiJoinRuleTest extends TableTestBase {
         |(SELECT * FROM T5) ON a = i
         """.stripMargin
     util.verifyRelPlan(sqlQuery)
+  }
+
+  def alterTableStatics(): Unit = {
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "T1"),
+      new CatalogTableStatistics(100, 10, 10, 10),
+      false)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "T2"),
+      new CatalogTableStatistics(1000, 10, 10, 10),
+      false)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "T3"),
+      new CatalogTableStatistics(10000, 10, 10, 10),
+      false)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "T4"),
+      new CatalogTableStatistics(10000, 100, 100, 100),
+      false)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "T5"),
+      new CatalogTableStatistics(10000, 1000, 1000, 1000),
+      false)
   }
 }

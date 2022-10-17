@@ -17,107 +17,94 @@
  */
 package org.apache.flink.table.planner.plan.common
 
-import org.apache.flink.api.common.typeinfo.TypeInformation
-import org.apache.flink.table.api.Types
 import org.apache.flink.table.api.config.OptimizerConfigOptions
-import org.apache.flink.table.plan.stats.{ColumnStats, TableStats}
+import org.apache.flink.table.catalog.{GenericInMemoryCatalog, ObjectPath}
+import org.apache.flink.table.catalog.stats.{CatalogColumnStatistics, CatalogColumnStatisticsDataBase, CatalogColumnStatisticsDataLong, CatalogTableStatistics}
 import org.apache.flink.table.planner.plan.rules.logical.JoinDeriveNullFilterRule
-import org.apache.flink.table.planner.plan.stats.FlinkStatistic
 import org.apache.flink.table.planner.utils.{TableTestBase, TableTestUtil}
 
 import org.junit.{Before, Test}
 
-import scala.collection.JavaConversions._
-
 abstract class JoinReorderTestBase extends TableTestBase {
 
   protected val util: TableTestUtil = getTableTestUtil
+  private val catalog = new GenericInMemoryCatalog("catalog1", "default_db")
 
   protected def getTableTestUtil: TableTestUtil
 
+  protected def getProperties: String
+
   @Before
   def setup(): Unit = {
-    val types = Array[TypeInformation[_]](Types.INT, Types.LONG, Types.STRING)
 
-    util.addTableSource(
-      "T1",
-      types,
-      Array("a1", "b1", "c1"),
-      FlinkStatistic
-        .builder()
-        .tableStats(
-          new TableStats(
-            1000000L,
-            Map(
-              "a1" -> new ColumnStats(1000000L, 0L, 4.0, 4, null, null),
-              "b1" -> new ColumnStats(10L, 0L, 8.0, 8, null, null)
-            )))
-        .build()
-    )
+    catalog.open()
+    util.tableEnv.registerCatalog("catalog1", catalog)
+    util.tableEnv.useCatalog("catalog1")
 
-    util.addTableSource(
-      "T2",
-      types,
-      Array("a2", "b2", "c2"),
-      FlinkStatistic
-        .builder()
-        .tableStats(
-          new TableStats(
-            10000L,
-            Map(
-              "a2" -> new ColumnStats(100L, 0L, 4.0, 4, null, null),
-              "b2" -> new ColumnStats(5000L, 0L, 8.0, 8, null, null)
-            )))
-        .build()
-    )
+    val ddl1 =
+      """
+        | CREATE TABLE catalog1.default_db.T1 ( 
+        |  a1 int,
+        |  b1 bigint,
+        |  c1 string
+        |  ) WITH (
+        |  'connector' = 'values',
+        |  %s
+        |  )
+        |""".stripMargin.format(getProperties)
+    util.tableEnv.executeSql(ddl1)
 
-    util.addTableSource(
-      "T3",
-      types,
-      Array("a3", "b3", "c3"),
-      FlinkStatistic
-        .builder()
-        .tableStats(
-          new TableStats(
-            10L,
-            Map(
-              "a3" -> new ColumnStats(5L, 0L, 4.0, 4, null, null),
-              "b3" -> new ColumnStats(2L, 0L, 8.0, 8, null, null)
-            )))
-        .build()
-    )
+    val ddl2 =
+      """
+        | CREATE TABLE catalog1.default_db.T2 ( 
+        |  a2 int,
+        |  b2 bigint,
+        |  c2 string
+        |  ) WITH (
+        |  'connector' = 'values',
+        |  %s
+        |  )
+        |""".stripMargin.format(getProperties)
+    util.tableEnv.executeSql(ddl2)
 
-    util.addTableSource(
-      "T4",
-      types,
-      Array("a4", "b4", "c4"),
-      FlinkStatistic
-        .builder()
-        .tableStats(
-          new TableStats(
-            100L,
-            Map(
-              "a4" -> new ColumnStats(100L, 0L, 4.0, 4, null, null),
-              "b4" -> new ColumnStats(20L, 0L, 8.0, 8, null, null)
-            )))
-        .build()
-    )
+    val ddl3 =
+      """
+        | CREATE TABLE catalog1.default_db.T3 ( 
+        |  a3 int,
+        |  b3 bigint,
+        |  c3 string
+        |  ) WITH (
+        |  'connector' = 'values',
+        |  %s
+        |  )
+        |""".stripMargin.format(getProperties)
+    util.tableEnv.executeSql(ddl3)
 
-    util.addTableSource(
-      "T5",
-      types,
-      Array("a5", "b5", "c5"),
-      FlinkStatistic
-        .builder()
-        .tableStats(
-          new TableStats(
-            500000L,
-            Map(
-              "a5" -> new ColumnStats(200000L, 0L, 4.0, 4, null, null),
-              "b5" -> new ColumnStats(200L, 0L, 8.0, 8, null, null)
-            )))
-        .build()
-    )
+    val ddl4 =
+      """
+        | CREATE TABLE catalog1.default_db.T4 ( 
+        |  a4 int,
+        |  b4 bigint,
+        |  c4 string
+        |  ) WITH (
+        |  'connector' = 'values',
+        |  %s
+        |  )
+        |""".stripMargin.format(getProperties)
+    util.tableEnv.executeSql(ddl4)
+
+    val ddl5 =
+      """
+        | CREATE TABLE catalog1.default_db.T5 (
+        |  a5 int,
+        |  b5 bigint,
+        |  c5 string
+        |  ) WITH (
+        |  'connector' = 'values',
+        |  %s
+        |  )
+        |""".stripMargin.format(getProperties)
+    util.tableEnv.executeSql(ddl5)
 
     util.getTableEnv.getConfig
       .set(OptimizerConfigOptions.TABLE_OPTIMIZER_JOIN_REORDER_ENABLED, Boolean.box(true))
@@ -125,6 +112,17 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testStarJoinCondition1(): Unit = {
+    alterTableStatistics()
+    val sql =
+      s"""
+         |SELECT * FROM T1, T2, T3, T4, T5
+         |WHERE a1 = a2 AND a1 = a3 AND a1 = a4 AND a1 = a5
+         """.stripMargin
+    util.verifyExecPlan(sql)
+  }
+
+  @Test
+  def testStarJoinConditionWithoutStatistics1(): Unit = {
     val sql =
       s"""
          |SELECT * FROM T1, T2, T3, T4, T5
@@ -135,6 +133,17 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testStarJoinCondition2(): Unit = {
+    alterTableStatistics()
+    val sql =
+      s"""
+         |SELECT * FROM T1, T2, T3, T4, T5
+         |WHERE b1 = b2 AND b1 = b3 AND b1 = b4 AND b1 = b5
+         """.stripMargin
+    util.verifyExecPlan(sql)
+  }
+
+  @Test
+  def testStarJoinConditionWithoutStatistics2(): Unit = {
     val sql =
       s"""
          |SELECT * FROM T1, T2, T3, T4, T5
@@ -145,6 +154,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testBushyJoinCondition1(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1, T2, T3, T4, T5
@@ -155,6 +165,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testBushyJoinCondition2(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1, T2, T3, T4, T5
@@ -165,6 +176,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testWithoutColumnStats(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1, T2, T3, T4, T5
@@ -175,6 +187,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testJoinWithProject(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |WITH V1 AS (SELECT b1, a1, a2, c2 FROM T1 JOIN T2 ON a1 = a2),
@@ -189,6 +202,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testJoinWithFilter(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |WITH V1 AS (SELECT * FROM T1 JOIN T2 ON a1 = a2 WHERE b1 * b2 > 10),
@@ -202,6 +216,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testInnerAndLeftOuterJoin(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1
@@ -216,6 +231,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testInnerAndRightOuterJoin(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1
@@ -230,6 +246,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testInnerAndFullOuterJoin(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1
@@ -243,6 +260,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testAllLeftOuterJoin(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1
@@ -257,6 +275,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testAllRightOuterJoin(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1
@@ -271,6 +290,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testAllFullOuterJoin(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1
@@ -285,6 +305,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testInnerJoinLeftOuterJoinInnerJoinLeftOuterJoin(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1
@@ -298,7 +319,22 @@ abstract class JoinReorderTestBase extends TableTestBase {
   }
 
   @Test
+  def testInnerJoinLeftOuterJoinInnerJoinLeftOuterJoinWithoutStatistics(): Unit = {
+    val sql =
+      s"""
+         |SELECT * FROM T1
+         |   JOIN T2 ON a1 = a2
+         |   LEFT OUTER JOIN T3 ON a1 = a3
+         |   JOIN T4 ON a1 = a4
+         |   LEFT OUTER JOIN T5 ON a4 = a5
+         """.stripMargin
+    // Because these tables have no statistics, they can not reorder.
+    util.verifyExecPlan(sql)
+  }
+
+  @Test
   def testLeftOuterJoinInnerJoinLeftOuterJoinInnerJoin(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1
@@ -313,6 +349,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testInnerJoinRightOuterJoinInnerJoinRightOuterJoin(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1
@@ -327,6 +364,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testRightOuterJoinInnerJoinRightOuterJoinInnerJoin(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1
@@ -341,6 +379,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testInnerJoinSemiJoin(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1
@@ -355,6 +394,7 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testInnerJoinAntiJoin(): Unit = {
+    alterTableStatistics()
     val sql =
       s"""
          |SELECT * FROM T1
@@ -369,64 +409,72 @@ abstract class JoinReorderTestBase extends TableTestBase {
 
   @Test
   def testDeriveNullFilterAfterJoinReorder(): Unit = {
-    val types = Array[TypeInformation[_]](Types.INT, Types.LONG)
-    val builderA = ColumnStats.Builder
-      .builder()
-      .setNdv(200000L)
-      .setNullCount(50000L)
-      .setAvgLen(4.0)
-      .setMaxLen(4)
-    val builderB = ColumnStats.Builder
-      .builder()
-      .setNdv(100000L)
-      .setNullCount(0L)
-      .setAvgLen(8.0)
-      .setMaxLen(8)
+    val tableStats = new CatalogTableStatistics(500000L, 100, 100, 100L)
+    val columnAStats = new CatalogColumnStatisticsDataLong(null, null, 200000L, 50000L)
+    val columnBStats = new CatalogColumnStatisticsDataLong(null, null, 100000L, 0L)
+    var columnStatisticsData = new java.util.HashMap[String, CatalogColumnStatisticsDataBase]()
 
-    util.addTableSource(
-      "T6",
-      types,
-      Array("a6", "b6"),
-      FlinkStatistic
-        .builder()
-        .tableStats(
-          new TableStats(
-            500000L,
-            Map(
-              "a6" -> builderA.build(),
-              "b6" -> builderB.build()
-            )))
-        .build())
+    val ddl1 =
+      """
+        | CREATE TABLE catalog1.default_db.T6 ( 
+        |  a6 int,
+        |  b6 bigint,
+        |  c6 string
+        |  ) WITH (
+        |  'connector' = 'values',
+        |  %s
+        |  )
+        |""".stripMargin.format(getProperties)
+    util.tableEnv.executeSql(ddl1)
+    catalog.alterTableStatistics(new ObjectPath("default_db", "T6"), tableStats, false)
+    columnStatisticsData.put("a6", columnAStats)
+    columnStatisticsData.put("b6", columnBStats)
+    catalog.alterTableColumnStatistics(
+      new ObjectPath("default_db", "T6"),
+      new CatalogColumnStatistics(columnStatisticsData),
+      false)
 
-    util.addTableSource(
-      "T7",
-      types,
-      Array("a7", "b7"),
-      FlinkStatistic
-        .builder()
-        .tableStats(
-          new TableStats(
-            500000L,
-            Map(
-              "a7" -> builderA.build(),
-              "b7" -> builderB.build()
-            )))
-        .build())
+    val ddl2 =
+      """
+        | CREATE TABLE catalog1.default_db.T7 (
+        |  a7 int,
+        |  b7 bigint,
+        |  c7 string
+        |  ) WITH (
+        |  'connector' = 'values',
+        |  %s
+        |  )
+        |""".stripMargin.format(getProperties)
+    util.tableEnv.executeSql(ddl2)
+    columnStatisticsData = new java.util.HashMap[String, CatalogColumnStatisticsDataBase]()
+    catalog.alterTableStatistics(new ObjectPath("default_db", "T7"), tableStats, false)
+    columnStatisticsData.put("a7", columnAStats)
+    columnStatisticsData.put("b7", columnBStats)
+    catalog.alterTableColumnStatistics(
+      new ObjectPath("default_db", "T7"),
+      new CatalogColumnStatistics(columnStatisticsData),
+      false)
 
-    util.addTableSource(
-      "T8",
-      types,
-      Array("a8", "b8"),
-      FlinkStatistic
-        .builder()
-        .tableStats(
-          new TableStats(
-            500000L,
-            Map(
-              "a8" -> builderA.build(),
-              "b8" -> builderB.build()
-            )))
-        .build())
+    val ddl3 =
+      """
+        | CREATE TABLE catalog1.default_db.T8 (
+        |  a8 int,
+        |  b8 bigint,
+        |  c8 string
+        |  ) WITH (
+        |  'connector' = 'values',
+        |  %s
+        |  )
+        |""".stripMargin.format(getProperties)
+    util.tableEnv.executeSql(ddl3)
+    columnStatisticsData = new java.util.HashMap[String, CatalogColumnStatisticsDataBase]()
+    catalog.alterTableStatistics(new ObjectPath("default_db", "T8"), tableStats, false)
+    columnStatisticsData.put("a8", columnAStats)
+    columnStatisticsData.put("b8", columnBStats)
+    catalog.alterTableColumnStatistics(
+      new ObjectPath("default_db", "T8"),
+      new CatalogColumnStatistics(columnStatisticsData),
+      false)
 
     util.getTableEnv.getConfig
       .set(JoinDeriveNullFilterRule.TABLE_OPTIMIZER_JOIN_NULL_FILTER_THRESHOLD, Long.box(10000))
@@ -437,5 +485,68 @@ abstract class JoinReorderTestBase extends TableTestBase {
          |   INNER JOIN T8 ON a6 = a8
          |""".stripMargin
     util.verifyExecPlan(sql)
+  }
+
+  def alterTableStatistics(): Unit = {
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "T1"),
+      new CatalogTableStatistics(1000000L, 100, 100, 100L),
+      false)
+    var columnStatisticsData = new java.util.HashMap[String, CatalogColumnStatisticsDataBase]()
+    columnStatisticsData.put("a1", new CatalogColumnStatisticsDataLong(null, null, 1000000L, 0L))
+    columnStatisticsData.put("b1", new CatalogColumnStatisticsDataLong(null, null, 10L, 0L))
+    catalog.alterTableColumnStatistics(
+      new ObjectPath("default_db", "T1"),
+      new CatalogColumnStatistics(columnStatisticsData),
+      false)
+
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "T2"),
+      new CatalogTableStatistics(10000L, 100, 100, 100L),
+      false)
+    columnStatisticsData = new java.util.HashMap[String, CatalogColumnStatisticsDataBase]()
+    columnStatisticsData.put("a2", new CatalogColumnStatisticsDataLong(null, null, 100L, 0L))
+    columnStatisticsData.put("b2", new CatalogColumnStatisticsDataLong(null, null, 5000L, 0L))
+    catalog.alterTableColumnStatistics(
+      new ObjectPath("default_db", "T2"),
+      new CatalogColumnStatistics(columnStatisticsData),
+      false)
+
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "T3"),
+      new CatalogTableStatistics(10L, 100, 100, 100L),
+      false)
+    columnStatisticsData = new java.util.HashMap[String, CatalogColumnStatisticsDataBase]()
+    columnStatisticsData.put("a3", new CatalogColumnStatisticsDataLong(null, null, 5L, 0L))
+    columnStatisticsData.put("b3", new CatalogColumnStatisticsDataLong(null, null, 2L, 0L))
+    catalog.alterTableColumnStatistics(
+      new ObjectPath("default_db", "T3"),
+      new CatalogColumnStatistics(columnStatisticsData),
+      false)
+
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "T4"),
+      new CatalogTableStatistics(100L, 100, 100, 100L),
+      false)
+    columnStatisticsData = new java.util.HashMap[String, CatalogColumnStatisticsDataBase]()
+    columnStatisticsData.put("a4", new CatalogColumnStatisticsDataLong(null, null, 100L, 0L))
+    columnStatisticsData.put("b4", new CatalogColumnStatisticsDataLong(null, null, 20L, 0L))
+    catalog.alterTableColumnStatistics(
+      new ObjectPath("default_db", "T4"),
+      new CatalogColumnStatistics(columnStatisticsData),
+      false)
+
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "T5"),
+      new CatalogTableStatistics(500000L, 100, 100, 100L),
+      false)
+    columnStatisticsData = new java.util.HashMap[String, CatalogColumnStatisticsDataBase]()
+    columnStatisticsData.put("a5", new CatalogColumnStatisticsDataLong(null, null, 200000L, 0L))
+    columnStatisticsData.put("b5", new CatalogColumnStatisticsDataLong(null, null, 20L, 0L))
+    catalog.alterTableColumnStatistics(
+      new ObjectPath("default_db", "T5"),
+      new CatalogColumnStatistics(columnStatisticsData),
+      false)
+
   }
 }

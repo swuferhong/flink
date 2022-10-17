@@ -240,6 +240,21 @@ public abstract class FlinkMetadata {
         }
     }
 
+    public interface StatisticsAvailable extends Metadata {
+        Method METHOD = Types.lookupMethod(StatisticsAvailable.class, "getIsStatisticsAvailable");
+
+        MetadataDef<StatisticsAvailable> DEF =
+                MetadataDef.of(
+                        StatisticsAvailable.class, StatisticsAvailable.Handler.class, METHOD);
+
+        Boolean getIsStatisticsAvailable();
+
+        /** Handler API. */
+        interface Handler extends MetadataHandler<StatisticsAvailable> {
+            Boolean getIsStatisticsAvailable(RelNode r, RelMetadataQuery mq);
+        }
+    }
+
     /** Metadata about which combinations of columns are upsert identifiers. */
     public interface UpsertKeys extends Metadata {
         Method METHOD = Types.lookupMethod(UpsertKeys.class, "getUpsertKeys");

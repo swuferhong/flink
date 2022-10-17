@@ -18,6 +18,8 @@
 
 package org.apache.flink.table.planner.plan.rules.logical;
 
+import org.apache.flink.table.planner.plan.metadata.FlinkRelMetadataQuery;
+
 import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.plan.RelRule;
@@ -381,6 +383,10 @@ public class FlinkJoinToMultiJoinRule extends RelRule<FlinkJoinToMultiJoinRule.C
     private boolean canCombine(RelNode input, JoinRelType joinType, boolean nullGenerating) {
         if (input instanceof MultiJoin) {
             MultiJoin join = (MultiJoin) input;
+            if (!FlinkRelMetadataQuery.reuseOrCreate(join.getCluster().getMetadataQuery())
+                    .getIsStatisticsAvailable(input)) {
+                return false;
+            }
             if (join.isFullOuterJoin() || nullGenerating) {
                 return false;
             }

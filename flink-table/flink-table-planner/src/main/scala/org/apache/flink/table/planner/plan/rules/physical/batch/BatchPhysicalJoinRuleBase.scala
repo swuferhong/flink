@@ -24,6 +24,7 @@ import org.apache.flink.table.api.{TableConfig, TableException, ValidationExcept
 import org.apache.flink.table.api.config.OptimizerConfigOptions
 import org.apache.flink.table.planner.JDouble
 import org.apache.flink.table.planner.hint.JoinStrategy
+import org.apache.flink.table.planner.plan.metadata.FlinkRelMetadataQuery
 import org.apache.flink.table.planner.plan.nodes.FlinkConventions
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalLocalHashAggregate
 import org.apache.flink.table.planner.plan.utils.{FlinkRelMdUtil, OperatorType}
@@ -168,6 +169,51 @@ trait BatchPhysicalJoinRuleBase {
     !joinInfo.pairs().isEmpty
   }
 
+  private def checkBroadcastWithOneSideHasStats(
+      rel: RelNode,
+      leftHasStats: Boolean,
+      joinType: JoinRelType,
+      tableConfig: TableConfig): (Boolean, Boolean) = {
+    val rowSize = binaryRowRelNodeSize(rel)
+    val threshold = tableConfig.get(OptimizerConfigOptions.TABLE_OPTIMIZER_BROADCAST_JOIN_THRESHOLD)
+    val smallerThan = rowSize < threshold
+
+    joinType match {
+      case JoinRelType.LEFT | JoinRelType.SEMI | JoinRelType.ANTI =>
+        (!leftHasStats && smallerThan, false)
+      case JoinRelType.RIGHT => (leftHasStats && smallerThan, true)
+      case JoinRelType.FULL => (false, false)
+      case JoinRelType.INNER => (smallerThan, leftHasStats)
+    }
+  }
+
+  private def checkBroadcastWithTwoSidesHaveStats(
+      join: Join,
+      tableConfig: TableConfig): (Boolean, Boolean) = {
+    val leftSize = binaryRowRelNodeSize(join.getLeft)
+    val rightSize = binaryRowRelNodeSize(join.getRight)
+
+    val threshold =
+      tableConfig.get(OptimizerConfigOptions.TABLE_OPTIMIZER_BROADCAST_JOIN_THRESHOLD)
+
+    val rightSizeSmallerThanThreshold = rightSize <= threshold
+    val leftSizeSmallerThanThreshold = leftSize <= threshold
+    val leftSmallerThanRight = leftSize < rightSize
+
+    join.getJoinType match {
+      // left side cannot be used as build side in SEMI/ANTI join.
+      case JoinRelType.LEFT | JoinRelType.SEMI | JoinRelType.ANTI =>
+        (rightSizeSmallerThanThreshold, false)
+      case JoinRelType.RIGHT => (leftSizeSmallerThanThreshold, true)
+      case JoinRelType.FULL => (false, false)
+      case JoinRelType.INNER =>
+        (
+          leftSizeSmallerThanThreshold
+            || rightSizeSmallerThanThreshold,
+          leftSmallerThanRight)
+    }
+  }
+
   /**
    * Decides whether the join can convert to BroadcastHashJoin.
    *
@@ -207,34 +253,25 @@ trait BatchPhysicalJoinRuleBase {
           (false, false)
       }
     } else {
-      val leftSize = binaryRowRelNodeSize(join.getLeft)
-      val rightSize = binaryRowRelNodeSize(join.getRight)
+      val fmq = FlinkRelMetadataQuery.reuseOrCreate(join.getCluster.getMetadataQuery)
+      val leftStatsAvailable = fmq.getIsStatisticsAvailable(join.getLeft)
+      val rightStatsAvailable = fmq.getIsStatisticsAvailable(join.getRight)
 
-      // if it is not with hint, just check size of left and right side by statistic and config
-      // if leftSize or rightSize is unknown, cannot use broadcast
-      if (leftSize == null || rightSize == null) {
-        return (false, false)
-      }
-
-      val threshold =
-        tableConfig.get(OptimizerConfigOptions.TABLE_OPTIMIZER_BROADCAST_JOIN_THRESHOLD)
-
-      val rightSizeSmallerThanThreshold = rightSize <= threshold
-      val leftSizeSmallerThanThreshold = leftSize <= threshold
-      val leftSmallerThanRight = leftSize < rightSize
-
-      join.getJoinType match {
-        case JoinRelType.LEFT => (rightSizeSmallerThanThreshold, false)
-        case JoinRelType.RIGHT => (leftSizeSmallerThanThreshold, true)
-        case JoinRelType.FULL => (false, false)
-        case JoinRelType.INNER =>
-          (
-            leftSizeSmallerThanThreshold
-              || rightSizeSmallerThanThreshold,
-            leftSmallerThanRight)
-        // left side cannot be used as build side in SEMI/ANTI join.
-        case JoinRelType.SEMI | JoinRelType.ANTI =>
-          (rightSizeSmallerThanThreshold, false)
+      (leftStatsAvailable, rightStatsAvailable) match {
+        case (false, false) => (false, false)
+        case (false, true) =>
+          checkBroadcastWithOneSideHasStats(
+            join.getRight,
+            leftHasStats = false,
+            join.getJoinType,
+            tableConfig)
+        case (true, false) =>
+          checkBroadcastWithOneSideHasStats(
+            join.getLeft,
+            leftHasStats = true,
+            join.getJoinType,
+            tableConfig)
+        case (true, true) => checkBroadcastWithTwoSidesHaveStats(join, tableConfig)
       }
     }
   }
@@ -252,6 +289,25 @@ trait BatchPhysicalJoinRuleBase {
         .equals(JoinStrategy.LEFT_INPUT)
       (true, isLeftToBuild)
     } else {
+      if (
+        !FlinkRelMetadataQuery
+          .reuseOrCreate(join.getCluster.getMetadataQuery)
+          .getIsStatisticsAvailable(join)
+      ) {
+        if (
+          isOperatorDisabled(tableConfig, OperatorType.SortMergeJoin) && isOperatorDisabled(
+            tableConfig,
+            OperatorType.NestedLoopJoin)
+        ) {
+          throw new TableException(
+            "No join operator can be selected, please add statistics for"
+              + " source or don't disable SortMergeJoin and NestedLoopJoin")
+        } else {
+          return (false, false)
+        }
+
+      }
+
       val leftSize = binaryRowRelNodeSize(join.getLeft)
       val rightSize = binaryRowRelNodeSize(join.getRight)
       val leftIsBuild = if (leftSize == null || rightSize == null || leftSize == rightSize) {

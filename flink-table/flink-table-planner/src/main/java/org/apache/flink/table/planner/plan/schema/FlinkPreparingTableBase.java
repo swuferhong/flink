@@ -100,6 +100,10 @@ public abstract class FlinkPreparingTableBase extends Prepare.AbstractPreparingT
         return this.statistic;
     }
 
+    public boolean haveStatistic() {
+        return this.statistic.getRowCount() != null;
+    }
+
     /**
      * Returns the table path in the {@link RelOptSchema}. Different with {@link
      * #getQualifiedName()}, the latter is mainly used for table digest.
