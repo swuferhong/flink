@@ -20,6 +20,12 @@ package org.apache.flink.table.planner.utils;
 
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.table.api.TableException;
+import org.apache.flink.table.catalog.Catalog;
+import org.apache.flink.table.catalog.CatalogPartitionSpec;
+import org.apache.flink.table.catalog.ObjectPath;
+import org.apache.flink.table.catalog.exceptions.PartitionNotExistException;
+import org.apache.flink.table.catalog.exceptions.TableNotExistException;
+import org.apache.flink.table.catalog.exceptions.TableNotPartitionedException;
 import org.apache.flink.table.catalog.stats.CatalogColumnStatistics;
 import org.apache.flink.table.catalog.stats.CatalogColumnStatisticsDataBase;
 import org.apache.flink.table.catalog.stats.CatalogColumnStatisticsDataBinary;
@@ -37,6 +43,7 @@ import org.apache.flink.util.Preconditions;
 import java.sql.Date;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -63,6 +70,38 @@ public class CatalogTableStatisticsConverter {
             columnStatsMap = new HashMap<>();
         }
         return new TableStats(rowCount, columnStatsMap);
+    }
+
+    public static TableStats convertToTableStatsForPartitionTable(
+            Catalog catalog, ObjectPath tablePath)
+            throws TableNotPartitionedException, TableNotExistException {
+        List<CatalogPartitionSpec> catalogPartitionSpecs = catalog.listPartitions(tablePath);
+        List<CatalogTableStatistics> tableStatisticsList =
+                new ArrayList<>(catalogPartitionSpecs.size());
+        List<CatalogColumnStatistics> catalogColumnStatisticsList =
+                new ArrayList<>(catalogPartitionSpecs.size());
+        for (CatalogPartitionSpec partitionSpec : catalogPartitionSpecs) {
+            try {
+                tableStatisticsList.add(catalog.getPartitionStatistics(tablePath, partitionSpec));
+                catalogColumnStatisticsList.add(
+                        catalog.getPartitionColumnStatistics(tablePath, partitionSpec));
+            } catch (PartitionNotExistException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        return convertToAccumulatedTableStates(
+                tableStatisticsList,
+                catalogColumnStatisticsList,
+                getPartitionKeys(catalogPartitionSpecs));
+    }
+
+    public static Set<String> getPartitionKeys(List<CatalogPartitionSpec> catalogPartitionSpecs) {
+        Set<String> partitionKeys = new HashSet<>();
+        for (CatalogPartitionSpec catalogPartitionSpec : catalogPartitionSpecs) {
+            Map<String, String> partitionSpec = catalogPartitionSpec.getPartitionSpec();
+            partitionKeys.addAll(partitionSpec.keySet());
+        }
+        return partitionKeys;
     }
 
     public static TableStats convertToAccumulatedTableStates(

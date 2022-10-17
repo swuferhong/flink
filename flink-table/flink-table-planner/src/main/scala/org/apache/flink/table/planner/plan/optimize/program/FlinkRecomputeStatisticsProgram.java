@@ -37,6 +37,7 @@ import org.apache.flink.table.planner.plan.abilities.source.SourceAbilitySpec;
 import org.apache.flink.table.planner.plan.schema.TableSourceTable;
 import org.apache.flink.table.planner.plan.stats.FlinkStatistic;
 import org.apache.flink.table.planner.plan.utils.DefaultRelShuttle;
+import org.apache.flink.table.planner.utils.CatalogTableStatisticsConverter;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 
 import org.apache.calcite.plan.RelOptTable;
@@ -47,11 +48,9 @@ import org.apache.calcite.rel.logical.LogicalTableScan;
 import javax.annotation.Nullable;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.table.api.config.OptimizerConfigOptions.TABLE_OPTIMIZER_SOURCE_REPORT_STATISTICS_ENABLED;
@@ -210,19 +209,10 @@ public class FlinkRecomputeStatisticsProgram implements FlinkOptimizeProgram<Bat
                     convertToAccumulatedTableStates(
                             catalog.bulkGetPartitionStatistics(tablePath, partitionSpecs),
                             catalog.bulkGetPartitionColumnStatistics(tablePath, partitionSpecs),
-                            getPartitionKeys(partitionSpecs)));
+                            CatalogTableStatisticsConverter.getPartitionKeys(partitionSpecs)));
         } catch (PartitionNotExistException e) {
             return Optional.empty();
         }
-    }
-
-    private static Set<String> getPartitionKeys(List<CatalogPartitionSpec> catalogPartitionSpecs) {
-        Set<String> partitionKeys = new HashSet<>();
-        for (CatalogPartitionSpec catalogPartitionSpec : catalogPartitionSpecs) {
-            Map<String, String> partitionSpec = catalogPartitionSpec.getPartitionSpec();
-            partitionKeys.addAll(partitionSpec.keySet());
-        }
-        return partitionKeys;
     }
 
     @SuppressWarnings({"unchecked", "raw"})

@@ -20,16 +20,20 @@ package org.apache.flink.table.planner.catalog;
 
 import org.apache.flink.table.api.ValidationException;
 import org.apache.flink.table.catalog.Catalog;
+import org.apache.flink.table.catalog.CatalogBaseTable;
 import org.apache.flink.table.catalog.CatalogManager;
+import org.apache.flink.table.catalog.CatalogTable;
 import org.apache.flink.table.catalog.ContextResolvedTable;
 import org.apache.flink.table.catalog.ObjectIdentifier;
 import org.apache.flink.table.catalog.ObjectPath;
 import org.apache.flink.table.catalog.ResolvedCatalogBaseTable;
 import org.apache.flink.table.catalog.exceptions.TableNotExistException;
+import org.apache.flink.table.catalog.exceptions.TableNotPartitionedException;
 import org.apache.flink.table.catalog.stats.CatalogColumnStatistics;
 import org.apache.flink.table.catalog.stats.CatalogTableStatistics;
 import org.apache.flink.table.plan.stats.TableStats;
 import org.apache.flink.table.planner.plan.stats.FlinkStatistic;
+import org.apache.flink.table.planner.utils.CatalogTableStatisticsConverter;
 
 import org.apache.calcite.linq4j.tree.Expression;
 import org.apache.calcite.schema.Schema;
@@ -103,11 +107,17 @@ class DatabaseCalciteSchema extends FlinkSchema {
         final Catalog catalog = lookupResult.getCatalog().orElseThrow(IllegalStateException::new);
         final ObjectPath tablePath = identifier.toObjectPath();
         try {
-            final CatalogTableStatistics tableStatistics = catalog.getTableStatistics(tablePath);
-            final CatalogColumnStatistics columnStatistics =
-                    catalog.getTableColumnStatistics(tablePath);
-            return convertToTableStats(tableStatistics, columnStatistics);
-        } catch (TableNotExistException e) {
+            if (!isPartitionedTable(catalog, tablePath)) {
+                final CatalogTableStatistics tableStatistics =
+                        catalog.getTableStatistics(tablePath);
+                final CatalogColumnStatistics columnStatistics =
+                        catalog.getTableColumnStatistics(tablePath);
+                return convertToTableStats(tableStatistics, columnStatistics);
+            } else {
+                return CatalogTableStatisticsConverter.convertToTableStatsForPartitionTable(
+                        catalog, tablePath);
+            }
+        } catch (TableNotExistException | TableNotPartitionedException e) {
             throw new ValidationException(
                     format(
                             "Could not get statistic for table: [%s, %s, %s]",
@@ -116,6 +126,17 @@ class DatabaseCalciteSchema extends FlinkSchema {
                             tablePath.getObjectName()),
                     e);
         }
+    }
+
+    private static boolean isPartitionedTable(Catalog catalog, ObjectPath tablePath) {
+        CatalogBaseTable table = null;
+        try {
+            table = catalog.getTable(tablePath);
+        } catch (TableNotExistException e) {
+            return false;
+        }
+
+        return (table instanceof CatalogTable) && ((CatalogTable) table).isPartitioned();
     }
 
     @Override

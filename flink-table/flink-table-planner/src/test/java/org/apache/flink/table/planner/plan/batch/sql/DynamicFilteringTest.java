@@ -23,6 +23,11 @@ import org.apache.flink.configuration.ExecutionOptions;
 import org.apache.flink.table.api.ExplainDetail;
 import org.apache.flink.table.api.TableConfig;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
+import org.apache.flink.table.catalog.Catalog;
+import org.apache.flink.table.catalog.CatalogPartitionImpl;
+import org.apache.flink.table.catalog.CatalogPartitionSpec;
+import org.apache.flink.table.catalog.ObjectPath;
+import org.apache.flink.table.catalog.stats.CatalogTableStatistics;
 import org.apache.flink.table.planner.utils.BatchTableTestUtil;
 import org.apache.flink.table.planner.utils.JavaScalaConversionUtil;
 import org.apache.flink.table.planner.utils.TableTestBase;
@@ -35,6 +40,7 @@ import org.junit.runners.Parameterized;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 
 /** Plan test for dynamic filtering. */
 @RunWith(Parameterized.class)
@@ -59,7 +65,7 @@ public class DynamicFilteringTest extends TableTestBase {
     private BatchTableTestUtil util;
 
     @Before
-    public void before() {
+    public void before() throws Exception {
         util = batchTestUtil(TableConfig.getDefault());
         util.tableEnv()
                 .getConfig()
@@ -86,6 +92,21 @@ public class DynamicFilteringTest extends TableTestBase {
                                 + " 'dynamic-filtering-fields' = 'p1;b1',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+        creatPartitionAndAlterPartitionStats(
+                util.tableEnv().getCatalog("default_catalog").get(),
+                new ObjectPath("default_database", "fact1"),
+                "p1",
+                "1");
+        creatPartitionAndAlterPartitionStats(
+                util.tableEnv().getCatalog("default_catalog").get(),
+                new ObjectPath("default_database", "fact1"),
+                "p1",
+                "2");
+        creatPartitionAndAlterPartitionStats(
+                util.tableEnv().getCatalog("default_catalog").get(),
+                new ObjectPath("default_database", "fact1"),
+                "p1",
+                "3");
 
         util.tableEnv()
                 .executeSql(
@@ -98,10 +119,20 @@ public class DynamicFilteringTest extends TableTestBase {
                                 + " 'connector' = 'values',\n"
                                 + " 'disable-lookup' = 'true',\n"
                                 + " 'runtime-source' = 'NewSource',\n"
-                                + " 'partition-list' = 'p1:1;p1:2;p1:3',\n"
+                                + " 'partition-list' = 'p2:1;p2:2;p2:3',\n"
                                 + " 'dynamic-filtering-fields' = 'p2',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+        creatPartitionAndAlterPartitionStats(
+                util.tableEnv().getCatalog("default_catalog").get(),
+                new ObjectPath("default_database", "fact2"),
+                "p2",
+                "1");
+        creatPartitionAndAlterPartitionStats(
+                util.tableEnv().getCatalog("default_catalog").get(),
+                new ObjectPath("default_database", "fact2"),
+                "p2",
+                "2");
 
         util.tableEnv()
                 .executeSql(
@@ -115,10 +146,17 @@ public class DynamicFilteringTest extends TableTestBase {
                                 + " 'disable-lookup' = 'true',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+        util.tableEnv()
+                .getCatalog("default_catalog")
+                .get()
+                .alterTableStatistics(
+                        new ObjectPath("default_database", "dim"),
+                        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+                        false);
     }
 
     @Test
-    public void testLegacySource() {
+    public void testLegacySource() throws Exception {
         util.tableEnv()
                 .executeSql(
                         "CREATE TABLE legacy_source (\n"
@@ -136,6 +174,16 @@ public class DynamicFilteringTest extends TableTestBase {
                                 + " 'disable-lookup' = 'true',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+        creatPartitionAndAlterPartitionStats(
+                util.tableEnv().getCatalog("default_catalog").get(),
+                new ObjectPath("default_database", "legacy_source"),
+                "p1",
+                "1");
+        creatPartitionAndAlterPartitionStats(
+                util.tableEnv().getCatalog("default_catalog").get(),
+                new ObjectPath("default_database", "legacy_source"),
+                "p1",
+                "2");
         util.verifyExplain(
                 "SELECT * FROM legacy_source, dim WHERE p1 = p AND x > 10",
                 JavaScalaConversionUtil.toScala(
@@ -186,5 +234,20 @@ public class DynamicFilteringTest extends TableTestBase {
                 "SELECT * FROM fact1, dim WHERE p1 = p AND x > 10 and p1 > 1",
                 JavaScalaConversionUtil.toScala(
                         Collections.singletonList(ExplainDetail.JSON_EXECUTION_PLAN)));
+    }
+
+    private static void creatPartitionAndAlterPartitionStats(
+            Catalog catalog, ObjectPath tablePath, String partitionKey, String partitionValue)
+            throws Exception {
+        catalog.createPartition(
+                tablePath,
+                new CatalogPartitionSpec(Collections.singletonMap(partitionKey, partitionValue)),
+                new CatalogPartitionImpl(new HashMap<>(), ""),
+                false);
+        catalog.alterPartitionStatistics(
+                tablePath,
+                new CatalogPartitionSpec(Collections.singletonMap(partitionKey, partitionValue)),
+                new CatalogTableStatistics(50000001L, 10, 10L, 10L),
+                false);
     }
 }

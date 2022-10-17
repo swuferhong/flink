@@ -20,8 +20,14 @@ package org.apache.flink.table.planner.plan.rules.physical.batch;
 
 import org.apache.flink.table.api.TableConfig;
 import org.apache.flink.table.api.config.OptimizerConfigOptions;
+import org.apache.flink.table.catalog.CatalogPartitionImpl;
+import org.apache.flink.table.catalog.CatalogPartitionSpec;
 import org.apache.flink.table.catalog.ObjectPath;
+import org.apache.flink.table.catalog.exceptions.PartitionAlreadyExistsException;
+import org.apache.flink.table.catalog.exceptions.PartitionNotExistException;
+import org.apache.flink.table.catalog.exceptions.PartitionSpecInvalidException;
 import org.apache.flink.table.catalog.exceptions.TableNotExistException;
+import org.apache.flink.table.catalog.exceptions.TableNotPartitionedException;
 import org.apache.flink.table.catalog.stats.CatalogColumnStatistics;
 import org.apache.flink.table.catalog.stats.CatalogColumnStatisticsDataBase;
 import org.apache.flink.table.catalog.stats.CatalogColumnStatisticsDataLong;
@@ -49,7 +55,9 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
             new TestValuesCatalog("testCatalog", "test_database", true);
 
     @Before
-    public void setup() throws TableNotExistException {
+    public void setup()
+            throws TableNotExistException, PartitionNotExistException, TableNotPartitionedException,
+                    PartitionSpecInvalidException, PartitionAlreadyExistsException {
         catalog.open();
         util.tableEnv().registerCatalog("testCatalog", catalog);
         util.tableEnv().useCatalog("testCatalog");
@@ -73,9 +81,26 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
                                 + " 'dynamic-filtering-fields' = 'fact_date_sk;amount',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
-        catalog.alterTableStatistics(
-                new ObjectPath("test_database", "fact_part"),
-                new CatalogTableStatistics(500L, 100, 100L, 100L),
+        ObjectPath factPath = new ObjectPath("test_database", "fact_part");
+        catalog.createPartition(
+                factPath,
+                new CatalogPartitionSpec(Collections.singletonMap("fact_date_sk", "1990")),
+                new CatalogPartitionImpl(new HashMap<>(), ""),
+                false);
+        catalog.alterPartitionStatistics(
+                factPath,
+                new CatalogPartitionSpec(Collections.singletonMap("fact_date_sk", "1990")),
+                new CatalogTableStatistics(50000001L, 10, 10L, 10L),
+                false);
+        catalog.createPartition(
+                factPath,
+                new CatalogPartitionSpec(Collections.singletonMap("fact_date_sk", "1991")),
+                new CatalogPartitionImpl(new HashMap<>(), ""),
+                false);
+        catalog.alterPartitionStatistics(
+                factPath,
+                new CatalogPartitionSpec(Collections.singletonMap("fact_date_sk", "1991")),
+                new CatalogTableStatistics(50000001L, 10, 10L, 10L),
                 false);
 
         // dim table.
@@ -125,7 +150,7 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
     }
 
     @Test
-    public void testFactTableIsNotPartitionTable() {
+    public void testFactTableIsNotPartitionTable() throws TableNotExistException {
         // non-partition fact table. Dynamic partition pruning will not succeed if fact side is not
         // partition table.
         util.tableEnv()
@@ -142,6 +167,10 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
                                 + " 'dynamic-filtering-fields' = 'fact_date_sk;amount',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+        catalog.alterTableStatistics(
+                new ObjectPath("test_database", "none_part_fact"),
+                new CatalogTableStatistics((long) 1E8, 100, 100L, 100L),
+                false);
 
         String query =
                 "Select * from dim, none_part_fact where none_part_fact.fact_date_sk = dim.dim_date_sk"
@@ -150,7 +179,10 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
     }
 
     @Test
-    public void testFactTableIsLegacySource() {
+    public void testFactTableIsLegacySource()
+            throws TableNotExistException, TableNotPartitionedException,
+                    PartitionSpecInvalidException, PartitionAlreadyExistsException,
+                    PartitionNotExistException {
         util.tableEnv()
                 .executeSql(
                         "CREATE TABLE legacy_source (\n"
@@ -167,6 +199,28 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
                                 + " 'dynamic-filtering-fields' = 'fact_date_sk;amount',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+        ObjectPath factPath = new ObjectPath("test_database", "legacy_source");
+        catalog.createPartition(
+                factPath,
+                new CatalogPartitionSpec(Collections.singletonMap("fact_date_sk", "1990")),
+                new CatalogPartitionImpl(new HashMap<>(), ""),
+                false);
+        catalog.alterPartitionStatistics(
+                factPath,
+                new CatalogPartitionSpec(Collections.singletonMap("fact_date_sk", "1990")),
+                new CatalogTableStatistics(50000001L, 10, 10L, 10L),
+                false);
+        catalog.createPartition(
+                factPath,
+                new CatalogPartitionSpec(Collections.singletonMap("fact_date_sk", "1991")),
+                new CatalogPartitionImpl(new HashMap<>(), ""),
+                false);
+        catalog.alterPartitionStatistics(
+                factPath,
+                new CatalogPartitionSpec(Collections.singletonMap("fact_date_sk", "1991")),
+                new CatalogTableStatistics(50000001L, 10, 10L, 10L),
+                false);
+
         String query =
                 "Select * from dim, legacy_source where legacy_source.fact_date_sk = dim.dim_date_sk"
                         + " and dim.price < 500";
@@ -369,7 +423,7 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
     }
 
     @Test
-    public void testMultiJoin() {
+    public void testMultiJoin() throws TableNotExistException {
         // Another table.
         util.tableEnv()
                 .executeSql(
@@ -381,6 +435,10 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
                                 + " 'connector' = 'values',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+        catalog.alterTableStatistics(
+                new ObjectPath("test_database", "sales"),
+                new CatalogTableStatistics((long) 1E8, 100, 100L, 100L),
+                false);
 
         String query =
                 "Select * from fact_part, dim, sales where fact_part.id = sales.id and"
@@ -389,7 +447,7 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
     }
 
     @Test
-    public void testComplexDimSideWithJoinInDimSide() {
+    public void testComplexDimSideWithJoinInDimSide() throws TableNotExistException {
         // Dim side contains join will not succeed in this version, it will improve later.
         util.tableEnv()
                 .executeSql(
@@ -401,6 +459,10 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
                                 + " 'connector' = 'values',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+        catalog.alterTableStatistics(
+                new ObjectPath("test_database", "sales"),
+                new CatalogTableStatistics((long) 1E8, 100, 100L, 100L),
+                false);
 
         util.tableEnv()
                 .executeSql(
@@ -412,6 +474,10 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
                                 + " 'connector' = 'values',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+        catalog.alterTableStatistics(
+                new ObjectPath("test_database", "item"),
+                new CatalogTableStatistics((long) 1E8, 100, 100L, 100L),
+                false);
 
         String query =
                 "Select * from fact_part join"
@@ -422,7 +488,7 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
     }
 
     @Test
-    public void testComplexDimSideWithAggInDimSide() {
+    public void testComplexDimSideWithAggInDimSide() throws TableNotExistException {
         // Dim side contains agg will not succeed in this version, it will improve later.
         util.tableEnv()
                 .executeSql(
@@ -434,6 +500,10 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
                                 + " 'connector' = 'values',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+        catalog.alterTableStatistics(
+                new ObjectPath("test_database", "sales"),
+                new CatalogTableStatistics((long) 1E8, 100, 100L, 100L),
+                false);
 
         String query =
                 "Select * from fact_part join"
@@ -446,7 +516,7 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
     // --------------------------dpp factor test ---------------------------------------------
 
     @Test
-    public void testDPPFactorToReorderTableWithoutStats() {
+    public void testDPPFactorToReorderTableWithoutStats() throws TableNotExistException {
         // While there are several joins, and fact table not adjacent to dim table directly. dynamic
         // partition pruning factor will try best to reorder join relations to make fact table
         // adjacent to dim table.
@@ -460,6 +530,11 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
                         + " 'bounded' = 'true'\n"
                         + ")";
         util.tableEnv().executeSql(ddl);
+        catalog.alterTableStatistics(
+                new ObjectPath("test_database", "item"),
+                new CatalogTableStatistics((long) 1E8, 100, 100L, 100L),
+                false);
+
         TableConfig tableConfig = util.tableEnv().getConfig();
         // Join reorder need open.
         tableConfig.set(OptimizerConfigOptions.TABLE_OPTIMIZER_JOIN_REORDER_ENABLED, true);
@@ -508,15 +583,6 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
                 createJoinKeyColumnStats(Collections.singletonList("id"), 10L, 1000L, 5L, 10L),
                 false);
 
-        tableStatistics = new CatalogTableStatistics(10000, 10000, 10000, 10000);
-        catalog.alterTableStatistics(
-                new ObjectPath("test_database", "fact_part"), tableStatistics, false);
-        catalog.alterTableColumnStatistics(
-                new ObjectPath("test_database", "fact_part"),
-                createJoinKeyColumnStats(
-                        Arrays.asList("fact_date_sk", "id"), 100L, 1000000L, 8500L, 9800L),
-                false);
-
         String query =
                 "Select * from fact_part, item, dim"
                         + " where fact_part.fact_date_sk = dim.dim_date_sk"
@@ -527,7 +593,7 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
     }
 
     @Test
-    public void testDPPFactorWithFactSideJoinKeyChanged() {
+    public void testDPPFactorWithFactSideJoinKeyChanged() throws TableNotExistException {
         // If partition keys changed in fact side. DPP factor will not work.
         String ddl =
                 "CREATE TABLE test_database.item (\n"
@@ -539,6 +605,11 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
                         + " 'bounded' = 'true'\n"
                         + ")";
         util.tableEnv().executeSql(ddl);
+        catalog.alterTableStatistics(
+                new ObjectPath("test_database", "item"),
+                new CatalogTableStatistics((long) 1E8, 100, 100L, 100L),
+                false);
+
         TableConfig tableConfig = util.tableEnv().getConfig();
         // Join reorder need open.
         tableConfig.set(OptimizerConfigOptions.TABLE_OPTIMIZER_JOIN_REORDER_ENABLED, true);
@@ -552,7 +623,7 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
     }
 
     @Test
-    public void testDPPFactorWithDimSideJoinKeyChanged() {
+    public void testDPPFactorWithDimSideJoinKeyChanged() throws TableNotExistException {
         // Although partition keys changed in dim side. DPP factor will work.
         String ddl =
                 "CREATE TABLE test_database.item (\n"
@@ -564,6 +635,11 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
                         + " 'bounded' = 'true'\n"
                         + ")";
         util.tableEnv().executeSql(ddl);
+        catalog.alterTableStatistics(
+                new ObjectPath("test_database", "item"),
+                new CatalogTableStatistics((long) 1E8, 100, 100L, 100L),
+                false);
+
         TableConfig tableConfig = util.tableEnv().getConfig();
         // Join reorder need open.
         tableConfig.set(OptimizerConfigOptions.TABLE_OPTIMIZER_JOIN_REORDER_ENABLED, true);
@@ -577,7 +653,7 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
     }
 
     @Test
-    public void testDPPFactorWithJoinKeysNotIncludePartitionKeys() {
+    public void testDPPFactorWithJoinKeysNotIncludePartitionKeys() throws TableNotExistException {
         // If join keys of partition table join with dim table not include partition keys, dpp
         // factor will not be adjusted and dpp will not succeed.
         String ddl =
@@ -590,6 +666,11 @@ public class DynamicPartitionPruningRuleTest extends TableTestBase {
                         + " 'bounded' = 'true'\n"
                         + ")";
         util.tableEnv().executeSql(ddl);
+        catalog.alterTableStatistics(
+                new ObjectPath("test_database", "item"),
+                new CatalogTableStatistics((long) 1E8, 100, 100L, 100L),
+                false);
+
         TableConfig tableConfig = util.tableEnv().getConfig();
         // Join reorder need open.
         tableConfig.set(OptimizerConfigOptions.TABLE_OPTIMIZER_JOIN_REORDER_ENABLED, true);

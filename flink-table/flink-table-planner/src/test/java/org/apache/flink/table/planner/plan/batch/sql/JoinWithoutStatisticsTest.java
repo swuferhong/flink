@@ -20,13 +20,17 @@ package org.apache.flink.table.planner.plan.batch.sql;
 
 import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
+import org.apache.flink.table.catalog.CatalogPartitionSpec;
 import org.apache.flink.table.catalog.ObjectPath;
+import org.apache.flink.table.catalog.exceptions.PartitionNotExistException;
 import org.apache.flink.table.catalog.exceptions.TableNotExistException;
 import org.apache.flink.table.catalog.stats.CatalogTableStatistics;
 import org.apache.flink.table.planner.plan.batch.sql.join.JoinTestBase;
 
 import org.junit.Before;
 import org.junit.Test;
+
+import java.util.Collections;
 
 public class JoinWithoutStatisticsTest extends JoinTestBase {
 
@@ -45,7 +49,20 @@ public class JoinWithoutStatisticsTest extends JoinTestBase {
                             new ObjectPath("default_db", "MyTable2"),
                             CatalogTableStatistics.UNKNOWN,
                             false);
-        } catch (TableNotExistException e) {
+            ObjectPath tablePath = new ObjectPath("default_db", "partition_t");
+            catalog()
+                    .alterPartitionStatistics(
+                            tablePath,
+                            new CatalogPartitionSpec(Collections.singletonMap("k", "1990")),
+                            CatalogTableStatistics.UNKNOWN,
+                            false);
+            catalog()
+                    .alterPartitionStatistics(
+                            tablePath,
+                            new CatalogPartitionSpec(Collections.singletonMap("k", "1991")),
+                            CatalogTableStatistics.UNKNOWN,
+                            false);
+        } catch (PartitionNotExistException | TableNotExistException e) {
             throw new RuntimeException(e);
         }
     }

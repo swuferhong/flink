@@ -19,7 +19,7 @@ package org.apache.flink.table.planner.plan.batch.sql.join
 
 import org.apache.flink.api.scala._
 import org.apache.flink.table.api._
-import org.apache.flink.table.catalog.{Catalog, ObjectPath}
+import org.apache.flink.table.catalog.{Catalog, CatalogPartitionImpl, CatalogPartitionSpec, ObjectPath}
 import org.apache.flink.table.catalog.stats.CatalogTableStatistics
 import org.apache.flink.table.planner.factories.TestValuesCatalog
 import org.apache.flink.table.planner.utils.{BatchTableTestUtil, TableTestBase}
@@ -63,6 +63,43 @@ abstract class JoinTestBase extends TableTestBase {
     catalog.alterTableStatistics(
       new ObjectPath("default_db", "MyTable2"),
       new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
+
+    // partition table
+    val ddl3 =
+      """
+        |CREATE TABLE partition_t (i int, j string, k bigint
+        | ) PARTITIONED BY (k)
+        | WITH (
+        |  'connector' = 'values',
+        |  'runtime-source' = 'NewSource',
+        |  'partition-list' = 'k:1990;k:1991',
+        |  'bounded' = 'true'
+        |  )
+        |""".stripMargin
+    tEnv.executeSql(ddl3)
+    val tablePath = new ObjectPath("default_db", "partition_t")
+    catalog.createPartition(
+      tablePath,
+      new CatalogPartitionSpec(java.util.Collections.singletonMap("k", "1990")),
+      new CatalogPartitionImpl(new java.util.HashMap[String, String], ""),
+      false
+    )
+    catalog.alterPartitionStatistics(
+      tablePath,
+      new CatalogPartitionSpec(java.util.Collections.singletonMap("k", "1990")),
+      new CatalogTableStatistics(50000001L, 10, 10L, 10L),
+      false)
+    catalog.createPartition(
+      tablePath,
+      new CatalogPartitionSpec(java.util.Collections.singletonMap("k", "1991")),
+      new CatalogPartitionImpl(new java.util.HashMap[String, String], ""),
+      false
+    )
+    catalog.alterPartitionStatistics(
+      tablePath,
+      new CatalogPartitionSpec(java.util.Collections.singletonMap("k", "1991")),
+      new CatalogTableStatistics(50000001L, 10, 10L, 10L),
       false)
   }
 
@@ -331,6 +368,13 @@ abstract class JoinTestBase extends TableTestBase {
                           |   right join
                           |   (select d, count(e) as e from MyTable2 group by d)
                           |   on a = d and b = e and d = 2 and b = 1
+                          |""".stripMargin)
+  }
+
+  @Test
+  def testInnerJoinForPartitionTable(): Unit = {
+    util.verifyExecPlan("""
+                          | SELECT c, j FROM MyTable1 JOIN partition_t ON a = i
                           |""".stripMargin)
   }
 }
