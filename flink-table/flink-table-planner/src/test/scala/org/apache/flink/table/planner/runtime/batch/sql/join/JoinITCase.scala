@@ -53,14 +53,62 @@ class JoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
   @Before
   override def before(): Unit = {
     super.before()
-    registerCollection("SmallTable3", smallData3, type3, "a, b, c", nullablesOfSmallData3)
-    registerCollection("Table3", data3, type3, "a, b, c", nullablesOfData3)
-    registerCollection("Table5", data5, type5, "d, e, f, g, h", nullablesOfData5)
-    registerCollection("NullTable3", nullData3, type3, "a, b, c", nullablesOfNullData3)
-    registerCollection("NullTable5", nullData5, type5, "d, e, f, g, h", nullablesOfNullData5)
-    registerCollection("l", data2_1, INT_DOUBLE, "a, b")
-    registerCollection("r", data2_2, INT_DOUBLE, "c, d")
-    registerCollection("t", data2_3, INT_DOUBLE, "c, d", nullablesOfData2_3)
+    registerCollection(
+      "SmallTable3",
+      smallData3,
+      type3,
+      "a, b, c",
+      nullablesOfSmallData3,
+      new FlinkStatistic(new TableStats(smallData3.size)))
+    registerCollection(
+      "Table3",
+      data3,
+      type3,
+      "a, b, c",
+      nullablesOfData3,
+      new FlinkStatistic(new TableStats(data3.size)))
+    registerCollection(
+      "Table5",
+      data5,
+      type5,
+      "d, e, f, g, h",
+      nullablesOfData5,
+      new FlinkStatistic(new TableStats(data5.size)))
+    registerCollection(
+      "NullTable3",
+      nullData3,
+      type3,
+      "a, b, c",
+      nullablesOfNullData3,
+      new FlinkStatistic(new TableStats(nullData3.size)))
+    registerCollection(
+      "NullTable5",
+      nullData5,
+      type5,
+      "d, e, f, g, h",
+      nullablesOfNullData5,
+      new FlinkStatistic(new TableStats(nullData5.size)))
+    registerCollection(
+      "l",
+      data2_1,
+      INT_DOUBLE,
+      "a, b",
+      nullablesOfData2_3,
+      new FlinkStatistic(new TableStats(data2_1.size)))
+    registerCollection(
+      "r",
+      data2_2,
+      INT_DOUBLE,
+      "c, d",
+      nullablesOfData2_3,
+      new FlinkStatistic(new TableStats(data2_2.size)))
+    registerCollection(
+      "t",
+      data2_3,
+      INT_DOUBLE,
+      "c, d",
+      nullablesOfData2_3,
+      new FlinkStatistic(new TableStats(data2_3.size)))
     JoinITCaseHelper.disableOtherJoinOpForJoin(tEnv, expectedJoinType)
   }
 
@@ -81,13 +129,17 @@ class JoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
       "inputT1",
       Seq(row(Long.box(Long.MaxValue), Double.box(1)), row(Long.box(Long.MinValue), Double.box(1))),
       new RowTypeInfo(LONG_TYPE_INFO, DOUBLE_TYPE_INFO),
-      "a, b"
+      "a, b",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(4L))
     )
     registerCollection(
       "inputT2",
       Seq(row(Long.box(Long.MaxValue), Double.box(1)), row(Long.box(Long.MinValue), Double.box(1))),
       new RowTypeInfo(LONG_TYPE_INFO, DOUBLE_TYPE_INFO),
-      "c, d"
+      "c, d",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(4L))
     )
 
     checkResult(
@@ -240,8 +292,20 @@ class JoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
     val data1: Seq[Row] =
       Seq(row(1, 1L, "Hi", true), row(2, 2L, "Hello", false), row(3, 2L, "Hello world", true))
     val type3 = new RowTypeInfo(INT_TYPE_INFO, LONG_TYPE_INFO, STRING_TYPE_INFO, BOOLEAN_TYPE_INFO)
-    registerCollection("table5", data1, type3, "a1, b1, c1, d1")
-    registerCollection("table6", data1, type3, "a2, b2, c2, d2")
+    registerCollection(
+      "table5",
+      data1,
+      type3,
+      "a1, b1, c1, d1",
+      Array(true, true, true, true),
+      new FlinkStatistic(new TableStats(data1.size)))
+    registerCollection(
+      "table6",
+      data1,
+      type3,
+      "a2, b2, c2, d2",
+      Array(true, true, true, true),
+      new FlinkStatistic(new TableStats(data1.size)))
 
     checkResult(
       "SELECT a1, a1, c2 FROM table5 INNER JOIN table6 ON d1 = d2 where d1 is true",
@@ -282,7 +346,13 @@ class JoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
 
   @Test
   def testJoinWithAlias(): Unit = {
-    registerCollection("AliasTable5", data5, type5, "d, e, f, g, c")
+    registerCollection(
+      "AliasTable5",
+      data5,
+      type5,
+      "d, e, f, g, c",
+      nullablesOfData5,
+      new FlinkStatistic(new TableStats(data5.size)))
     checkResult(
       "SELECT AliasTable5.c, T.`1-_./Ü` FROM " +
         "(SELECT a, b, c AS `1-_./Ü` FROM Table3) AS T, AliasTable5 WHERE a = d AND a < 4",
@@ -904,12 +974,18 @@ class JoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
   }
 
   @Test
-  def testRightOuterJoinRightOuterJoinCannotReorder: Unit = {
+  def testRightOuterJoinRightOuterJoinCannotReorder(): Unit = {
     // This test is used to test the result after join to multi join and join reorder.
     tEnv.getConfig.set(
       OptimizerConfigOptions.TABLE_OPTIMIZER_JOIN_REORDER_ENABLED,
       Boolean.box(true))
-    registerCollection("Table2", data2, type2, "d, e, f, g, h", nullablesOfData2)
+    registerCollection(
+      "Table2",
+      data2,
+      type2,
+      "d, e, f, g, h",
+      nullablesOfData2,
+      new FlinkStatistic(new TableStats(1200L)))
     // This query will be set into one multi jon set by FlinkJoinToMultiJoinRule,
     // but it can not reorder, because the sub right outer join query join condition is from generate-null side.
     checkResult(

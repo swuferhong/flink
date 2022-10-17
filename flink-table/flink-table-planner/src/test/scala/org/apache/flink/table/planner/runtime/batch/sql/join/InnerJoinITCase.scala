@@ -20,6 +20,8 @@ package org.apache.flink.table.planner.runtime.batch.sql.join
 import org.apache.flink.api.common.typeinfo.BasicTypeInfo.INT_TYPE_INFO
 import org.apache.flink.api.java.typeutils.RowTypeInfo
 import org.apache.flink.table.api.config.ExecutionConfigOptions._
+import org.apache.flink.table.plan.stats.TableStats
+import org.apache.flink.table.planner.plan.stats.FlinkStatistic
 import org.apache.flink.table.planner.runtime.batch.sql.join.JoinITCaseHelper.disableOtherJoinOpForJoin
 import org.apache.flink.table.planner.runtime.batch.sql.join.JoinType.{BroadcastHashJoin, HashJoin, JoinType, NestedLoopJoin, SortMergeJoin}
 import org.apache.flink.table.planner.runtime.utils.BatchTestBase
@@ -34,7 +36,6 @@ import org.junit.runners.Parameterized
 import java.math.{BigDecimal => JBigDecimal}
 import java.util
 
-import scala.collection.Seq
 import scala.util.Random
 
 @RunWith(classOf[Parameterized])
@@ -78,10 +79,34 @@ class InnerJoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
   @Before
   override def before(): Unit = {
     super.before()
-    registerCollection("myUpperCaseData", myUpperCaseData, INT_STRING, "N, L", Array(true, true))
-    registerCollection("myLowerCaseData", myLowerCaseData, INT_STRING, "n, l", Array(true, true))
-    registerCollection("myTestData1", myTestData1, INT_INT, "a, b", Array(true, true))
-    registerCollection("myTestData2", myTestData2, INT_INT, "a, b", Array(true, true))
+    registerCollection(
+      "myUpperCaseData",
+      myUpperCaseData,
+      INT_STRING,
+      "N, L",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(myUpperCaseData.size)))
+    registerCollection(
+      "myLowerCaseData",
+      myLowerCaseData,
+      INT_STRING,
+      "n, l",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(myLowerCaseData.size)))
+    registerCollection(
+      "myTestData1",
+      myTestData1,
+      INT_INT,
+      "a, b",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(myTestData1.size)))
+    registerCollection(
+      "myTestData2",
+      myTestData2,
+      INT_INT,
+      "a, b",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(myTestData2.size)))
     disableOtherJoinOpForJoin(tEnv, expectedJoinType)
   }
 
@@ -133,7 +158,10 @@ class InnerJoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
         row(new JBigDecimal(2), 2)
       ),
       DEC_INT,
-      "a, b")
+      "a, b",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(3L))
+    )
     registerCollection(
       "rightTable",
       Seq(
@@ -141,7 +169,9 @@ class InnerJoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
         row(new JBigDecimal(1), 1)
       ),
       DEC_INT,
-      "c, d")
+      "c, d",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(2L)))
     checkResult(
       "SELECT * FROM leftTable, rightTable WHERE a = c",
       Seq(
@@ -156,8 +186,20 @@ class InnerJoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
 
     val bigData = Random.shuffle(
       bigIntStringData.union(bigIntStringData).union(bigIntStringData).union(bigIntStringData))
-    registerCollection("bigData1", bigData, INT_STRING, "a, b")
-    registerCollection("bigData2", bigData, INT_STRING, "c, d")
+    registerCollection(
+      "bigData1",
+      bigData,
+      INT_STRING,
+      "a, b",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(bigData.size)))
+    registerCollection(
+      "bigData2",
+      bigData,
+      INT_STRING,
+      "c, d",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(bigData.size)))
 
     checkResult(
       "SELECT a, b FROM bigData1, bigData2 WHERE a = c",
@@ -172,8 +214,20 @@ class InnerJoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
 
       val bigData = Random.shuffle(
         bigIntStringData.union(bigIntStringData).union(bigIntStringData).union(bigIntStringData))
-      registerCollection("bigData1", bigData, INT_STRING, "a, b")
-      registerCollection("bigData2", bigData, INT_STRING, "c, d")
+      registerCollection(
+        "bigData1",
+        bigData,
+        INT_STRING,
+        "a, b",
+        Array(true, true),
+        new FlinkStatistic(new TableStats(bigData.size)))
+      registerCollection(
+        "bigData2",
+        bigData,
+        INT_STRING,
+        "c, d",
+        Array(true, true),
+        new FlinkStatistic(new TableStats(bigData.size)))
 
       checkResult(
         "SELECT a, b FROM bigData1, bigData2 WHERE a = c",

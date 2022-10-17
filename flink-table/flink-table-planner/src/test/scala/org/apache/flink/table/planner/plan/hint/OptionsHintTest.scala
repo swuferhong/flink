@@ -21,6 +21,7 @@ import org.apache.flink.table.api.{DataTypes, TableSchema, ValidationException}
 import org.apache.flink.table.api.config.TableConfigOptions
 import org.apache.flink.table.api.internal.StatementSetImpl
 import org.apache.flink.table.catalog.{CatalogViewImpl, ObjectPath}
+import org.apache.flink.table.catalog.stats.CatalogTableStatistics
 import org.apache.flink.table.planner.JHashMap
 import org.apache.flink.table.planner.plan.hint.OptionsHintTest.{IS_BOUNDED, Param}
 import org.apache.flink.table.planner.plan.nodes.calcite.LogicalLegacySink
@@ -55,6 +56,13 @@ class OptionsHintTest(param: Param) extends TableTestBase {
                      |  'k2' = 'v2'
                      |)
        """.stripMargin)
+    util.tableEnv
+      .getCatalog("default_catalog")
+      .get()
+      .alterTableStatistics(
+        new ObjectPath("default_database", "t1"),
+        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+        false)
 
     util.addTable(s"""
                      |create table t2(
@@ -68,6 +76,13 @@ class OptionsHintTest(param: Param) extends TableTestBase {
                      |  'k4' = 'v4'
                      |)
        """.stripMargin)
+    util.tableEnv
+      .getCatalog("default_catalog")
+      .get()
+      .alterTableStatistics(
+        new ObjectPath("default_database", "t2"),
+        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+        false)
   }
 
   @Test

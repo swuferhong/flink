@@ -25,10 +25,11 @@ import org.junit.{Before, Test}
 class BroadcastHashSemiAntiJoinTest extends SemiAntiJoinTestBase {
 
   @Before
-  def before(): Unit = {
-    util.tableEnv.getConfig
+  override def before(): Unit = {
+    super.before()
+    tEnv.getConfig
       .set(OptimizerConfigOptions.TABLE_OPTIMIZER_BROADCAST_JOIN_THRESHOLD, Long.box(Long.MaxValue))
-    util.tableEnv.getConfig.set(
+    tEnv.getConfig.set(
       ExecutionConfigOptions.TABLE_EXEC_DISABLED_OPERATORS,
       "SortMergeJoin, NestedLoopJoin, ShuffleHashJoin")
     // the result plan may contains NestedLoopJoin (singleRowJoin)

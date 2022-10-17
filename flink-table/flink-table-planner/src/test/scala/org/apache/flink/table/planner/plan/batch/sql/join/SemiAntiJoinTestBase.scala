@@ -19,21 +19,93 @@ package org.apache.flink.table.planner.plan.batch.sql.join
 
 import org.apache.flink.api.scala._
 import org.apache.flink.table.api._
-import org.apache.flink.table.api.bridge.scala._
+import org.apache.flink.table.catalog.{Catalog, ObjectPath}
+import org.apache.flink.table.catalog.stats.CatalogTableStatistics
+import org.apache.flink.table.planner.factories.TestValuesCatalog
 import org.apache.flink.table.planner.runtime.utils.JavaUserDefinedTableFunctions.StringSplit
 import org.apache.flink.table.planner.utils.{BatchTableTestUtil, TableTestBase}
 
-import org.junit.Test
+import org.junit.{Before, Test}
 
 abstract class SemiAntiJoinTestBase extends TableTestBase {
 
-  protected val util: BatchTableTestUtil = batchTestUtil()
-  util.addTableSource[(Int, Long, String)]("l", 'a, 'b, 'c)
-  util.addTableSource[(Int, Long, String)]("r", 'd, 'e, 'f)
-  util.addTableSource[(Int, Long, String)]("t", 'i, 'j, 'k)
-  util.addTableSource[(Int, Long)]("leftT", 'a, 'b)
-  util.addTableSource[(Int, Long)]("rightT", 'c, 'd)
-  util.addFunction("table_func", new StringSplit)
+  protected var util: BatchTableTestUtil = batchTestUtil()
+  protected var tEnv: TableEnvironment = util.tableEnv
+  protected val catalog: Catalog = new TestValuesCatalog("catalog1", "default_db", false)
+
+  @Before
+  def before(): Unit = {
+    catalog.open()
+    tEnv.registerCatalog("catalog1", catalog)
+    tEnv.useCatalog("catalog1")
+    tEnv.useDatabase("default_db")
+
+    val ddl1 =
+      """
+        |CREATE TABLE l (a int, b bigint, c string) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl1)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "l"),
+      new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
+
+    val ddl2 =
+      """
+        |CREATE TABLE r (d int, e bigint, f string) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl2)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "r"),
+      new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
+
+    val ddl3 =
+      """
+        |CREATE TABLE t (i int, j bigint, k string) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl3)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "t"),
+      new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
+
+    val ddl4 =
+      """
+        |CREATE TABLE leftT (a int, b bigint) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl4)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "leftT"),
+      new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
+
+    val ddl5 =
+      """
+        |CREATE TABLE rightT (c int, d bigint) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl5)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "rightT"),
+      new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
+    util.addFunction("table_func", new StringSplit)
+  }
 
   @Test
   def testInWithUncorrelated_SimpleCondition1(): Unit = {

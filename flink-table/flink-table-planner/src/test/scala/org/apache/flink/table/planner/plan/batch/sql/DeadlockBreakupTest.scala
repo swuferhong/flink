@@ -17,9 +17,10 @@
  */
 package org.apache.flink.table.planner.plan.batch.sql
 
-import org.apache.flink.api.scala._
 import org.apache.flink.table.api._
 import org.apache.flink.table.api.config.{ExecutionConfigOptions, OptimizerConfigOptions}
+import org.apache.flink.table.catalog.ObjectPath
+import org.apache.flink.table.catalog.stats.CatalogTableStatistics
 import org.apache.flink.table.planner.utils.TableTestBase
 
 import org.junit.{Before, Test}
@@ -27,12 +28,57 @@ import org.junit.{Before, Test}
 class DeadlockBreakupTest extends TableTestBase {
 
   private val util = batchTestUtil()
+  private val tEnv: TableEnvironment = util.tableEnv
 
   @Before
   def before(): Unit = {
-    util.addTableSource[(Int, Long, String)]("x", 'a, 'b, 'c)
-    util.addTableSource[(Int, Long, String)]("y", 'd, 'e, 'f)
-    util.addDataStream[(Int, Long, String)]("t", 'a, 'b, 'c)
+    val ddl1 =
+      """
+        |CREATE TABLE x (a int, b bigint, c string) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl1)
+    util.tableEnv
+      .getCatalog("default_catalog")
+      .get()
+      .alterTableStatistics(
+        new ObjectPath("default_database", "x"),
+        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+        false)
+
+    val ddl2 =
+      """
+        |CREATE TABLE y (d int, e bigint, f string) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl2)
+    util.tableEnv
+      .getCatalog("default_catalog")
+      .get()
+      .alterTableStatistics(
+        new ObjectPath("default_database", "y"),
+        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+        false)
+
+    val ddl3 =
+      """
+        |CREATE TABLE t (a int, b bigint, c string) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl3)
+    util.tableEnv
+      .getCatalog("default_catalog")
+      .get()
+      .alterTableStatistics(
+        new ObjectPath("default_database", "t"),
+        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+        false)
   }
 
   @Test

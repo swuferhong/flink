@@ -17,6 +17,8 @@
  */
 package org.apache.flink.table.planner.runtime.batch.sql.join
 
+import org.apache.flink.table.plan.stats.TableStats
+import org.apache.flink.table.planner.plan.stats.FlinkStatistic
 import org.apache.flink.table.planner.runtime.batch.sql.join.JoinType.{BroadcastHashJoin, HashJoin, JoinType, NestedLoopJoin, SortMergeJoin}
 import org.apache.flink.table.planner.runtime.utils.BatchTestBase
 import org.apache.flink.table.planner.runtime.utils.BatchTestBase.row
@@ -27,8 +29,6 @@ import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
 
 import java.util
-
-import scala.collection.Seq
 
 @RunWith(classOf[Parameterized])
 class OuterJoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
@@ -60,11 +60,41 @@ class OuterJoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
   @Before
   override def before(): Unit = {
     super.before()
-    registerCollection("uppercasedata", upperCaseData, INT_STRING, "N, L", nullablesOfUpperCaseData)
-    registerCollection("lowercasedata", lowerCaseData, INT_STRING, "n, l", nullablesOfLowerCaseData)
-    registerCollection("allnulls", allNulls, INT_ONLY, "a", nullablesOfAllNulls)
-    registerCollection("leftT", leftT, INT_DOUBLE, "a, b")
-    registerCollection("rightT", rightT, INT_DOUBLE, "c, d")
+    registerCollection(
+      "uppercasedata",
+      upperCaseData,
+      INT_STRING,
+      "N, L",
+      nullablesOfUpperCaseData,
+      new FlinkStatistic(new TableStats(100L)))
+    registerCollection(
+      "lowercasedata",
+      lowerCaseData,
+      INT_STRING,
+      "n, l",
+      nullablesOfLowerCaseData,
+      new FlinkStatistic(new TableStats(100L)))
+    registerCollection(
+      "allnulls",
+      allNulls,
+      INT_ONLY,
+      "a",
+      nullablesOfAllNulls,
+      new FlinkStatistic(new TableStats(100L)))
+    registerCollection(
+      "leftT",
+      leftT,
+      INT_DOUBLE,
+      "a, b",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(100L)))
+    registerCollection(
+      "rightT",
+      rightT,
+      INT_DOUBLE,
+      "c, d",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(100L)))
     JoinITCaseHelper.disableOtherJoinOpForJoin(tEnv, expectedJoinType)
   }
 
@@ -154,7 +184,9 @@ class OuterJoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
 
   @Test
   def testFullEmptyOuter(): Unit = {
-    if (expectedJoinType != NestedLoopJoin && expectedJoinType != BroadcastHashJoin) {
+    if (
+      expectedJoinType != NestedLoopJoin && expectedJoinType != HashJoin && expectedJoinType != BroadcastHashJoin
+    ) {
       checkResult(
         "SELECT * FROM (SELECT * FROM leftT WHERE FALSE) " +
           "FULL JOIN (SELECT * FROM rightT WHERE FALSE) ON a = c and b < d",
@@ -304,8 +336,20 @@ class OuterJoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
       val leftData = upperCaseData.filter(_.getField(0).asInstanceOf[Int] <= 4)
       val rightData = upperCaseData.filter(_.getField(0).asInstanceOf[Int] >= 3)
 
-      registerCollection("leftUpper", leftData, INT_STRING, "N, L")
-      registerCollection("rightUpper", rightData, INT_STRING, "N, L")
+      registerCollection(
+        "leftUpper",
+        leftData,
+        INT_STRING,
+        "N, L",
+        Array(true, true),
+        new FlinkStatistic(new TableStats(100L)))
+      registerCollection(
+        "rightUpper",
+        rightData,
+        INT_STRING,
+        "N, L",
+        Array(true, true),
+        new FlinkStatistic(new TableStats(100L)))
 
       checkResult(
         "SELECT * FROM leftUpper FULL JOIN rightUpper ON leftUpper.N = rightUpper.N",

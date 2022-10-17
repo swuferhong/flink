@@ -24,7 +24,8 @@ import org.junit.Before
 class NestedLoopSemiAntiJoinTest extends SemiAntiJoinTestBase {
 
   @Before
-  def before(): Unit = {
+  override def before(): Unit = {
+    super.before()
     util.tableEnv.getConfig
       .set(ExecutionConfigOptions.TABLE_EXEC_DISABLED_OPERATORS, "SortMergeJoin, HashJoin")
   }

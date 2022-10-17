@@ -19,17 +19,52 @@ package org.apache.flink.table.planner.plan.batch.sql.join
 
 import org.apache.flink.api.scala._
 import org.apache.flink.table.api._
-import org.apache.flink.table.api.{TableException, ValidationException}
-import org.apache.flink.table.api.bridge.scala._
+import org.apache.flink.table.catalog.{Catalog, ObjectPath}
+import org.apache.flink.table.catalog.stats.CatalogTableStatistics
+import org.apache.flink.table.planner.factories.TestValuesCatalog
 import org.apache.flink.table.planner.utils.{BatchTableTestUtil, TableTestBase}
 
-import org.junit.Test
+import org.junit.{Before, Test}
 
 abstract class JoinTestBase extends TableTestBase {
 
-  protected val util: BatchTableTestUtil = batchTestUtil()
-  util.addTableSource[(Int, Long, String)]("MyTable1", 'a, 'b, 'c)
-  util.addTableSource[(Int, Long, Int, String, Long)]("MyTable2", 'd, 'e, 'f, 'g, 'h)
+  protected var util: BatchTableTestUtil = batchTestUtil()
+  protected var tEnv: TableEnvironment = util.tableEnv
+  protected val catalog: Catalog = new TestValuesCatalog("catalog1", "default_db", false)
+
+  @Before
+  def before(): Unit = {
+    catalog.open()
+    tEnv.registerCatalog("catalog1", catalog)
+    tEnv.useCatalog("catalog1")
+    tEnv.useDatabase("default_db")
+
+    val ddl1 =
+      """
+        |CREATE TABLE MyTable1 (a int, b bigint, c string) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl1)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "MyTable1"),
+      new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
+
+    val ddl2 =
+      """
+        |CREATE TABLE MyTable2 (d int, e bigint, f int, g string, h bigint) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl2)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "MyTable2"),
+      new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
+  }
 
   @Test(expected = classOf[ValidationException])
   def testJoinNonExistingKey(): Unit = {
@@ -185,7 +220,18 @@ abstract class JoinTestBase extends TableTestBase {
 
   @Test
   def testFullOuterWithUsing(): Unit = {
-    util.addTableSource[(Int, Long, String)]("MyTable3", 'a, 'b, 'c)
+    val ddl =
+      """
+        |CREATE TABLE MyTable3 (a int, b bigint, c string) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "MyTable3"),
+      new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
     val sqlQuery =
       """
         |SELECT * FROM (SELECT * FROM MyTable1) FULL JOIN (SELECT * FROM MyTable3) USING (a)
@@ -200,7 +246,18 @@ abstract class JoinTestBase extends TableTestBase {
 
   @Test
   def testSelfJoin(): Unit = {
-    util.addTableSource[(Long, String)]("src", 'k, 'v)
+    val ddl =
+      """
+        |CREATE TABLE src (k bigint, v string) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "src"),
+      new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
     val sql =
       s"""SELECT * FROM
          |  (SELECT * FROM src WHERE k = 0) src1

@@ -17,6 +17,8 @@
  */
 package org.apache.flink.table.planner.runtime.batch.sql.join
 
+import org.apache.flink.table.plan.stats.TableStats
+import org.apache.flink.table.planner.plan.stats.FlinkStatistic
 import org.apache.flink.table.planner.runtime.batch.sql.join.JoinType.{BroadcastHashJoin, HashJoin, JoinType, NestedLoopJoin, SortMergeJoin}
 import org.apache.flink.table.planner.runtime.batch.sql.join.SemiJoinITCase.leftT
 import org.apache.flink.table.planner.runtime.utils.BatchTestBase
@@ -29,17 +31,33 @@ import org.junit.runners.Parameterized
 
 import java.util
 
-import scala.collection.Seq
-
 @RunWith(classOf[Parameterized])
 class SemiJoinITCase(expectedJoinType: JoinType) extends BatchTestBase {
 
   @Before
   override def before(): Unit = {
     super.before()
-    registerCollection("leftT", leftT, INT_DOUBLE, "a, b")
-    registerCollection("rightT", SemiJoinITCase.rightT, INT_DOUBLE, "c, d")
-    registerCollection("rightUniqueKeyT", SemiJoinITCase.rightUniqueKeyT, INT_DOUBLE, "c, d")
+    registerCollection(
+      "leftT",
+      leftT,
+      INT_DOUBLE,
+      "a, b",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(1000L)))
+    registerCollection(
+      "rightT",
+      SemiJoinITCase.rightT,
+      INT_DOUBLE,
+      "c, d",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(1000L)))
+    registerCollection(
+      "rightUniqueKeyT",
+      SemiJoinITCase.rightUniqueKeyT,
+      INT_DOUBLE,
+      "c, d",
+      Array(true, true),
+      new FlinkStatistic(new TableStats(1000L)))
     JoinITCaseHelper.disableOtherJoinOpForJoin(tEnv, expectedJoinType)
   }
 

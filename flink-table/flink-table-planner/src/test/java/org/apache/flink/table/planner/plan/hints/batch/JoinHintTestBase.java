@@ -24,6 +24,9 @@ import org.apache.flink.table.api.StatementSet;
 import org.apache.flink.table.api.TableConfig;
 import org.apache.flink.table.api.ValidationException;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
+import org.apache.flink.table.catalog.ObjectPath;
+import org.apache.flink.table.catalog.exceptions.TableNotExistException;
+import org.apache.flink.table.catalog.stats.CatalogTableStatistics;
 import org.apache.flink.table.planner.hint.JoinStrategy;
 import org.apache.flink.table.planner.plan.optimize.RelNodeBlockPlanBuilder;
 import org.apache.flink.table.planner.plan.utils.FlinkRelOptUtil;
@@ -63,7 +66,7 @@ public abstract class JoinHintTestBase extends TableTestBase {
                     .collect(Collectors.toList());
 
     @Before
-    public void before() {
+    public void before() throws TableNotExistException {
         util = batchTestUtil(TableConfig.getDefault());
         util.tableEnv()
                 .executeSql(
@@ -75,6 +78,13 @@ public abstract class JoinHintTestBase extends TableTestBase {
                                 + " 'bounded' = 'true'\n"
                                 + ")");
         util.tableEnv()
+                .getCatalog("default_catalog")
+                .get()
+                .alterTableStatistics(
+                        new ObjectPath("default_database", "T1"),
+                        new CatalogTableStatistics((long) 1E8, 100, 100L, 100L),
+                        false);
+        util.tableEnv()
                 .executeSql(
                         "CREATE TABLE T2 (\n"
                                 + "  a2 BIGINT,\n"
@@ -83,6 +93,13 @@ public abstract class JoinHintTestBase extends TableTestBase {
                                 + " 'connector' = 'values',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+        util.tableEnv()
+                .getCatalog("default_catalog")
+                .get()
+                .alterTableStatistics(
+                        new ObjectPath("default_database", "T2"),
+                        new CatalogTableStatistics((long) 1E8, 100, 100L, 100L),
+                        false);
 
         util.tableEnv()
                 .executeSql(
@@ -93,6 +110,13 @@ public abstract class JoinHintTestBase extends TableTestBase {
                                 + " 'connector' = 'values',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+        util.tableEnv()
+                .getCatalog("default_catalog")
+                .get()
+                .alterTableStatistics(
+                        new ObjectPath("default_database", "T3"),
+                        new CatalogTableStatistics((long) 1E8, 100, 100L, 100L),
+                        false);
 
         util.tableEnv().executeSql("CREATE View V4 as select a3 as a4, b3 as b4 from T3");
 

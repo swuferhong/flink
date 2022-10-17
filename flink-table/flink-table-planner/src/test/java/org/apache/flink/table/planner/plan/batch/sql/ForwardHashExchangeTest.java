@@ -20,6 +20,9 @@ package org.apache.flink.table.planner.plan.batch.sql;
 import org.apache.flink.table.api.TableConfig;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
 import org.apache.flink.table.api.config.OptimizerConfigOptions;
+import org.apache.flink.table.catalog.ObjectPath;
+import org.apache.flink.table.catalog.exceptions.TableNotExistException;
+import org.apache.flink.table.catalog.stats.CatalogTableStatistics;
 import org.apache.flink.table.planner.utils.BatchTableTestUtil;
 import org.apache.flink.table.planner.utils.TableTestBase;
 
@@ -32,7 +35,7 @@ public class ForwardHashExchangeTest extends TableTestBase {
     private BatchTableTestUtil util;
 
     @Before
-    public void before() {
+    public void before() throws TableNotExistException {
         util = batchTestUtil(TableConfig.getDefault());
 
         util.getStreamEnv().getConfig().setDynamicGraph(true);
@@ -54,6 +57,14 @@ public class ForwardHashExchangeTest extends TableTestBase {
                                 + " 'bounded' = 'true'\n"
                                 + ")");
         util.tableEnv()
+                .getCatalog("default_catalog")
+                .get()
+                .alterTableStatistics(
+                        new ObjectPath("default_database", "T"),
+                        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+                        false);
+
+        util.tableEnv()
                 .executeSql(
                         "CREATE TABLE T1 (\n"
                                 + "  a1 BIGINT,\n"
@@ -65,6 +76,14 @@ public class ForwardHashExchangeTest extends TableTestBase {
                                 + " 'bounded' = 'true'\n"
                                 + ")");
         util.tableEnv()
+                .getCatalog("default_catalog")
+                .get()
+                .alterTableStatistics(
+                        new ObjectPath("default_database", "T1"),
+                        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+                        false);
+
+        util.tableEnv()
                 .executeSql(
                         "CREATE TABLE T2 (\n"
                                 + "  a2 BIGINT,\n"
@@ -75,6 +94,14 @@ public class ForwardHashExchangeTest extends TableTestBase {
                                 + " 'connector' = 'values',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+
+        util.tableEnv()
+                .getCatalog("default_catalog")
+                .get()
+                .alterTableStatistics(
+                        new ObjectPath("default_database", "T2"),
+                        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+                        false);
     }
 
     @Test
@@ -345,7 +372,7 @@ public class ForwardHashExchangeTest extends TableTestBase {
     }
 
     @Test
-    public void testMultipleInputs() {
+    public void testMultipleInputs() throws TableNotExistException {
         util.getTableEnv()
                 .getConfig()
                 .set(OptimizerConfigOptions.TABLE_OPTIMIZER_JOIN_REORDER_ENABLED, false)
@@ -365,6 +392,14 @@ public class ForwardHashExchangeTest extends TableTestBase {
                                 + " 'bounded' = 'true'\n"
                                 + ")");
         util.tableEnv()
+                .getCatalog("default_catalog")
+                .get()
+                .alterTableStatistics(
+                        new ObjectPath("default_database", "x"),
+                        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+                        false);
+
+        util.tableEnv()
                 .executeSql(
                         "CREATE TABLE y (\n"
                                 + "  d INT,\n"
@@ -376,6 +411,14 @@ public class ForwardHashExchangeTest extends TableTestBase {
                                 + " 'bounded' = 'true'\n"
                                 + ")");
         util.tableEnv()
+                .getCatalog("default_catalog")
+                .get()
+                .alterTableStatistics(
+                        new ObjectPath("default_database", "y"),
+                        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+                        false);
+
+        util.tableEnv()
                 .executeSql(
                         "CREATE TABLE z (\n"
                                 + "  g INT,\n"
@@ -386,6 +429,13 @@ public class ForwardHashExchangeTest extends TableTestBase {
                                 + " 'connector' = 'values',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+        util.tableEnv()
+                .getCatalog("default_catalog")
+                .get()
+                .alterTableStatistics(
+                        new ObjectPath("default_database", "z"),
+                        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+                        false);
 
         util.tableEnv()
                 .executeSql(
@@ -397,6 +447,13 @@ public class ForwardHashExchangeTest extends TableTestBase {
                                 + " 'connector' = 'values',\n"
                                 + " 'bounded' = 'true'\n"
                                 + ")");
+        util.tableEnv()
+                .getCatalog("default_catalog")
+                .get()
+                .alterTableStatistics(
+                        new ObjectPath("default_database", "t"),
+                        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+                        false);
 
         util.verifyExecPlan(
                 "WITH\n"

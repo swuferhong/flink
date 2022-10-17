@@ -25,6 +25,10 @@ import org.apache.flink.api.scala._
 import org.apache.flink.configuration.ExecutionOptions
 import org.apache.flink.table.api._
 import org.apache.flink.table.api.config.{ExecutionConfigOptions, OptimizerConfigOptions}
+import org.apache.flink.table.catalog.ObjectPath
+import org.apache.flink.table.catalog.stats.CatalogTableStatistics
+import org.apache.flink.table.plan.stats.TableStats
+import org.apache.flink.table.planner.plan.stats.FlinkStatistic
 import org.apache.flink.table.planner.utils.{TableTestBase, TableTestUtil}
 
 import org.junit.{Before, Test}
@@ -36,13 +40,65 @@ import org.junit.runners.Parameterized.Parameters
 class MultipleInputCreationTest(shuffleMode: BatchShuffleMode) extends TableTestBase {
 
   private val util = batchTestUtil()
+  private val tEnv: TableEnvironment = util.tableEnv
 
   @Before
   def before(): Unit = {
-    util.addTableSource[(Int, Long, String, Int)]("x", 'a, 'b, 'c, 'nx)
-    util.addTableSource[(Int, Long, String, Int)]("y", 'd, 'e, 'f, 'ny)
-    util.addTableSource[(Int, Long, String, Int)]("z", 'g, 'h, 'i, 'nz)
-    util.addDataStream[(Int, Long, String)]("t", 'a, 'b, 'c)
+    val ddl1 =
+      """
+        |CREATE TABLE x (a int, b bigint, c string, nx int) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl1)
+    tEnv
+      .getCatalog("default_catalog")
+      .get()
+      .alterTableStatistics(
+        new ObjectPath("default_database", "x"),
+        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+        false)
+
+    val ddl2 =
+      """
+        |CREATE TABLE y (d int, e bigint, f string, ny int) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl2)
+    tEnv
+      .getCatalog("default_catalog")
+      .get()
+      .alterTableStatistics(
+        new ObjectPath("default_database", "y"),
+        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+        false)
+
+    val ddl3 =
+      """
+        |CREATE TABLE z (g int, h bigint, i string, nz int) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl3)
+    tEnv
+      .getCatalog("default_catalog")
+      .get()
+      .alterTableStatistics(
+        new ObjectPath("default_database", "z"),
+        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+        false)
+
+    util.addDataStream[(Int, Long, String)](
+      "t",
+      Array(true, true, true),
+      new FlinkStatistic(new TableStats(100000001L)),
+      'a,
+      'b,
+      'c)
     util.tableConfig.set(ExecutionOptions.BATCH_SHUFFLE_MODE, shuffleMode)
   }
 

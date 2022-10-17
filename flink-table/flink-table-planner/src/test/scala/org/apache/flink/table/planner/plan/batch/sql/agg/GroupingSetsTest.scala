@@ -19,42 +19,79 @@ package org.apache.flink.table.planner.plan.batch.sql.agg
 
 import org.apache.flink.api.scala._
 import org.apache.flink.table.api._
+import org.apache.flink.table.catalog.ObjectPath
+import org.apache.flink.table.catalog.stats.CatalogTableStatistics
 import org.apache.flink.table.planner.plan.utils.FlinkRelOptUtil
 import org.apache.flink.table.planner.utils.{TableTestBase, TableTestUtil}
 
+import org.junit.{Before, Test}
 import org.junit.Assert.assertEquals
-import org.junit.Test
 
 import java.sql.Date
 
 class GroupingSetsTest extends TableTestBase {
 
   private val util = batchTestUtil()
-  util.addTableSource[(Int, Long, Int)]("MyTable", 'a, 'b, 'c)
-  util.addTableSource[(String, Int, String)]("emp", 'ename, 'deptno, 'gender)
-  util.addTableSource[(Int, String)]("dept", 'deptno, 'dname)
-  util.addTableSource[(Long, String, Int, String, String, Long, Int, Boolean, Boolean, Date)](
-    "emps",
-    'empno,
-    'name,
-    'deptno,
-    'gender,
-    'city,
-    'empid,
-    'age,
-    'slacker,
-    'manager,
-    'joinedat)
-  util.addTableSource[(Int, String, String, Int, Date, Double, Double, Int)](
-    "scott_emp",
-    'empno,
-    'ename,
-    'job,
-    'mgr,
-    'hiredate,
-    'sal,
-    'comm,
-    'deptno)
+  private val tEnv: TableEnvironment = util.tableEnv
+
+  @Before
+  def before(): Unit = {
+    val ddl1 =
+      """
+        |CREATE TABLE emp (ename string, deptno int, gender string) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl1)
+    tEnv
+      .getCatalog("default_catalog")
+      .get()
+      .alterTableStatistics(
+        new ObjectPath("default_database", "emp"),
+        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+        false)
+
+    val ddl2 =
+      """
+        |CREATE TABLE dept (deptno int, dname string) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl2)
+    tEnv
+      .getCatalog("default_catalog")
+      .get()
+      .alterTableStatistics(
+        new ObjectPath("default_database", "dept"),
+        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+        false)
+
+    util.addTableSource[(Int, Long, Int)]("MyTable", 'a, 'b, 'c)
+    util.addTableSource[(Long, String, Int, String, String, Long, Int, Boolean, Boolean, Date)](
+      "emps",
+      'empno,
+      'name,
+      'deptno,
+      'gender,
+      'city,
+      'empid,
+      'age,
+      'slacker,
+      'manager,
+      'joinedat)
+    util.addTableSource[(Int, String, String, Int, Date, Double, Double, Int)](
+      "scott_emp",
+      'empno,
+      'ename,
+      'job,
+      'mgr,
+      'hiredate,
+      'sal,
+      'comm,
+      'deptno)
+  }
 
   @Test
   def testGroupingSets(): Unit = {

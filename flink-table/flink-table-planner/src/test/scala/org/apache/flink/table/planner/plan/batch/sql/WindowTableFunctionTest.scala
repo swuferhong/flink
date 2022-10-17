@@ -17,31 +17,61 @@
  */
 package org.apache.flink.table.planner.plan.batch.sql
 
-import org.apache.flink.api.scala._
 import org.apache.flink.table.api._
+import org.apache.flink.table.catalog.ObjectPath
+import org.apache.flink.table.catalog.stats.CatalogTableStatistics
 import org.apache.flink.table.planner.utils.TableTestBase
 
 import org.junit.{Before, Test}
 
-import java.sql.Timestamp
-
 class WindowTableFunctionTest extends TableTestBase {
 
   private val util = batchTestUtil()
+  private val tEnv: TableEnvironment = util.tableEnv
 
   @Before
   def before(): Unit = {
-    util.addTableSource[(Timestamp, Long, Int, String)]("MyTable", 'ts, 'a, 'b, 'c)
-    util.addTableSource[(Int, Long, String, Int, Timestamp)]("MyTable1", 'a, 'b, 'c, 'd, 'ts)
-    util.tableEnv.executeSql(s"""
-                                |create table MyTable2 (
-                                |  a int,
-                                |  b bigint,
-                                |  c as proctime()
-                                |) with (
-                                |  'connector' = 'COLLECTION'
-                                |)
-                                |""".stripMargin)
+    val ddl1 =
+      """
+        |CREATE TABLE MyTable (ts timestamp, a bigint, b int, c string) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl1)
+    util.tableEnv
+      .getCatalog("default_catalog")
+      .get()
+      .alterTableStatistics(
+        new ObjectPath("default_database", "MyTable"),
+        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+        false)
+
+    val ddl2 =
+      """
+        |CREATE TABLE MyTable1 (a int, b bigint, c string, d int, ts timestamp) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl2)
+    util.tableEnv
+      .getCatalog("default_catalog")
+      .get()
+      .alterTableStatistics(
+        new ObjectPath("default_database", "MyTable1"),
+        new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+        false)
+
+    tEnv.executeSql(s"""
+                       |create table MyTable2 (
+                       |  a int,
+                       |  b bigint,
+                       |  c as proctime()
+                       |) with (
+                       |  'connector' = 'COLLECTION'
+                       |)
+                       |""".stripMargin)
   }
 
   @Test

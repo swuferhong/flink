@@ -19,9 +19,11 @@ package org.apache.flink.table.planner.plan.batch.sql
 
 import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.api.java.typeutils.GenericTypeInfo
-import org.apache.flink.api.scala._
 import org.apache.flink.table.api._
 import org.apache.flink.table.api.config.ExecutionConfigOptions
+import org.apache.flink.table.catalog.{Catalog, ObjectPath}
+import org.apache.flink.table.catalog.stats.CatalogTableStatistics
+import org.apache.flink.table.planner.factories.TestValuesCatalog
 import org.apache.flink.table.planner.plan.utils.NonPojo
 import org.apache.flink.table.planner.utils.TableTestBase
 
@@ -30,13 +32,55 @@ import org.junit.{Before, Test}
 class SetOperatorsTest extends TableTestBase {
 
   private val util = batchTestUtil()
+  private val tEnv: TableEnvironment = util.tableEnv
+  private val catalog: Catalog = new TestValuesCatalog("catalog1", "default_db", false)
 
   @Before
   def before(): Unit = {
-    util.tableEnv.getConfig.set(ExecutionConfigOptions.TABLE_EXEC_DISABLED_OPERATORS, "SortAgg")
-    util.addTableSource[(Int, Long, String)]("T1", 'a, 'b, 'c)
-    util.addTableSource[(Int, Long, String)]("T2", 'd, 'e, 'f)
-    util.addTableSource[(Int, Long, Int, String, Long)]("T3", 'a, 'b, 'd, 'c, 'e)
+    catalog.open()
+    tEnv.registerCatalog("catalog1", catalog)
+    tEnv.useCatalog("catalog1")
+    tEnv.useDatabase("default_db")
+    tEnv.getConfig.set(ExecutionConfigOptions.TABLE_EXEC_DISABLED_OPERATORS, "SortAgg")
+
+    val ddl1 =
+      """
+        |CREATE TABLE T1 (a int, b bigint, c string) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl1)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "T1"),
+      new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
+
+    val ddl2 =
+      """
+        |CREATE TABLE T2 (d int, e bigint, f string) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl2)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "T2"),
+      new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
+
+    val ddl3 =
+      """
+        |CREATE TABLE T3 (a int, b bigint, d int, c string, e bigint) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl3)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "T3"),
+      new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
   }
 
   @Test(expected = classOf[ValidationException])
@@ -105,13 +149,35 @@ class SetOperatorsTest extends TableTestBase {
 
   @Test
   def testMinusWithNestedTypes(): Unit = {
-    util.addTableSource[(Long, (Int, String), Array[Boolean])]("MyTable", 'a, 'b, 'c)
+    val ddl =
+      """
+        |CREATE TABLE MyTable (a bigint, b row(b1 int, b2 string), c array<boolean>) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "MyTable"),
+      new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
     util.verifyExecPlan("SELECT * FROM MyTable EXCEPT SELECT * FROM MyTable")
   }
 
   @Test
   def testUnionNullableTypes(): Unit = {
-    util.addTableSource[((Int, String), (Int, String), Int)]("A", 'a, 'b, 'c)
+    val ddl =
+      """
+        |CREATE TABLE A (a row(a1 int, a2 string), b row(b1 int, b2 string), c int) WITH (
+        | 'connector' = 'values',
+        | 'bounded' = 'true'
+        | )
+        |""".stripMargin
+    tEnv.executeSql(ddl)
+    catalog.alterTableStatistics(
+      new ObjectPath("default_db", "A"),
+      new CatalogTableStatistics(100L, 10, 10L, 10L),
+      false)
     util.verifyExecPlan(
       "SELECT a FROM A UNION ALL SELECT CASE WHEN c > 0 THEN b ELSE NULL END FROM A")
   }

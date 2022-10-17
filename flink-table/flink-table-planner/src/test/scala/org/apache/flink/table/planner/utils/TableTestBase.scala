@@ -180,6 +180,24 @@ abstract class TableTestUtilBase(test: TableTestBase, isStreamingMode: Boolean) 
     tableEnv.from(name)
   }
 
+  def addDataStream[T: TypeInformation](
+      name: String,
+      fieldsNullEmpty: Array[Boolean],
+      flinkStatistics: FlinkStatistic,
+      fields: Expression*): Table = {
+    val env = new ScalaStreamExecEnv(new LocalStreamEnvironment())
+    val dataStream = env.fromElements[T]().javaStream
+    val tableEnv = getTableEnv
+    TableTestUtil.createTemporaryView(
+      tableEnv,
+      name,
+      dataStream,
+      Some(fields.toArray),
+      Some(fieldsNullEmpty),
+      Some(flinkStatistics))
+    tableEnv.from(name)
+  }
+
   /**
    * Create a [[TestTableSource]] with the given schema, and registers this TableSource under a
    * unique name into the TableEnvironment's catalog.

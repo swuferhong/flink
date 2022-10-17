@@ -21,6 +21,9 @@ package org.apache.flink.table.planner.plan.nodes.exec.operator;
 import org.apache.flink.table.api.ExplainDetail;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
+import org.apache.flink.table.catalog.ObjectPath;
+import org.apache.flink.table.catalog.exceptions.TableNotExistException;
+import org.apache.flink.table.catalog.stats.CatalogTableStatistics;
 import org.apache.flink.table.planner.utils.JavaScalaConversionUtil;
 import org.apache.flink.table.planner.utils.TableFunc1;
 import org.apache.flink.table.planner.utils.TableTestBase;
@@ -166,6 +169,16 @@ public abstract class OperatorNameTestBase extends TableTestBase {
                                 + "  'bounded' = 'true')",
                         tableName);
         tEnv.executeSql(srcTableDdl);
+        try {
+            tEnv.getCatalog("default_catalog")
+                    .get()
+                    .alterTableStatistics(
+                            new ObjectPath("default_database", tableName),
+                            new CatalogTableStatistics(100000001L, 10, 10L, 10L),
+                            false);
+        } catch (TableNotExistException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     protected void createSourceWithTimeAttribute() {
